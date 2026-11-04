@@ -1,10 +1,4 @@
-"""Craigslist scraper.
-
-No bot wall to speak of. Uses the SF apartment search filtered to
-2-3 bedrooms and dog-friendly. Drops the neighborhood-id filter
-on purpose: codes drift, and the result set is small enough to filter
-on the title/hood text client-side.
-"""
+"""Craigslist scraper for target downtown Chicago neighborhoods."""
 import re
 
 from playwright.async_api import BrowserContext
@@ -13,37 +7,19 @@ from bs4 import BeautifulSoup
 
 from . import cache, dogs
 from .geo import resolve_neighborhood
-from .locations import MARIN_SEARCH_TERMS, SF_SEARCH_TERMS
+from .locations import CHICAGO_SEARCH_TERMS
 from .models import Listing
 
 SEARCH_URLS = [
-    # SF apartments — filter to Richmond/Sunset target hoods below.
-    "https://sfbay.craigslist.org/search/sfc/apa"
-    "?min_bedrooms=2&max_bedrooms=3"
-    "&pets_dog=1",
-    # North Bay (Marin) — kept for Mill Valley / Sausalito candidates.
-    "https://sfbay.craigslist.org/search/nby/apa"
-    "?min_bedrooms=2&max_bedrooms=3"
-    "&pets_dog=1",
+    "https://www.craigslist.org/search/area/chicago?cat=apa&min_bedrooms=1&max_bedrooms=2",
 ]
 
 def _term_pattern(term: str) -> str:
     return r"\s+".join(re.escape(part) for part in term.split())
 
 
-# Hoods we filter SF posts down to (Richmond / Sunset / Presidio cluster).
-# Marin posts are kept on a different rule — see scrape() below.
-SF_HOODS_RE = re.compile(
-    "|".join(_term_pattern(term) for term in SF_SEARCH_TERMS),
-    re.IGNORECASE,
-)
-# Marin: Mill Valley (+ its immediate sub-neighborhoods Tam Valley /
-# Homestead Valley / Almonte) and Sausalito. Both are walkable downtowns
-# with ferry access plus Headlands / Dipsea trail access. The nby search
-# above already covers this geography;
-# this regex is the name filter that lets those listings through.
-MARIN_HOODS_RE = re.compile(
-    "|".join(_term_pattern(term) for term in MARIN_SEARCH_TERMS),
+CHICAGO_HOODS_RE = re.compile(
+    "|".join(_term_pattern(term) for term in CHICAGO_SEARCH_TERMS),
     re.IGNORECASE,
 )
 
@@ -102,10 +78,6 @@ async def _extract_card(card) -> Listing | None:
         baths=baths,
         sqft=sqft,
         neighborhood=hood or None,
-        # The URL filter is pets_dog=1 — landlord checked "dogs ok". Body enrichment
-        # may downgrade this to False if it finds "no large dogs" or similar.
-        pets_allowed=True,
-        dog_policy="dogs_ok",  # baseline from the search filter; enrichment refines.
         image_url=image_url,
         raw={"hood": hood, "title": title, "price_text": price_text},
     )
@@ -157,7 +129,7 @@ async def _scrape_one(ctx: BrowserContext, url: str) -> list[Listing]:
                 if listing.title and re.search(r"\*?(leased|rented|taken)\*?", listing.title, re.IGNORECASE):
                     continue
                 blob = " ".join(filter(None, [listing.neighborhood, listing.title]))
-                if not (SF_HOODS_RE.search(blob) or MARIN_HOODS_RE.search(blob)):
+                if not CHICAGO_HOODS_RE.search(blob):
                     continue
                 out.append(listing)
             except Exception as e:

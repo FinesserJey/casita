@@ -20,6 +20,11 @@ GCS, deploy to Firebase, or call the Google Maps Routes API. It does use the
 local Playwright Chromium browser to capture Open Graph preview cards from
 listing photos and facts.
 
+The committed sanitized fixture is from Casita's earlier San Francisco search.
+The demo page labels this clearly; its listings, map positions, and rent
+averages are not Chicago market data. Use a live Chicago search for local
+decisions.
+
 ## Live Runs
 
 Live search uses browser automation and network calls:
@@ -34,6 +39,11 @@ CASITA_FIREBASE_PROJECT=your-project uv run casita publish --local
 Copy `.env.example` to `.env` for live/private runs. `publish --local` renders
 from the local SQLite file, but it still deploys to Firebase; set
 `CASITA_FIREBASE_PROJECT` or pass `--project`.
+
+Firebase Hosting serves public static files. Casita's publish command renders
+from a temporary copy of the local database with contact fields, CRM
+conversations, statuses, votes, action history, pending URLs, and attached
+screenshots omitted. The original local database is not modified.
 
 !!! warning "Google Maps cost"
 

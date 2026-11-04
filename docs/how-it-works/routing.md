@@ -6,15 +6,16 @@ icon: lucide/map
 
 Routing lives in `src/casita/walk.py`.
 
-Casita computes walking or driving minutes from each listing to curated anchors:
-beaches, trailheads, bakeries, and the Ferry Building. For SF listings the
-times are walking times. For Marin listings the times are drive times, because
-walking to SF anchors from Mill Valley or Sausalito would distort the ranking.
+Casita computes walking and driving estimates from each listing to curated
+Chicago anchors, including CTA stations, lakefront beaches, bakeries,
+restaurants, cinemas, live theatre, shopping, and activities. Walking access
+to CTA and everyday destinations informs ranking; driving estimates are shown
+for selected activities.
 
 The core functions are:
 
-- `populate_for` for walking times to SF anchors
-- `populate_drive_for_marin` for drive times from Marin listings
+- `populate_for` for walking times to Chicago anchors
+- `populate_drive_for_chicago` for driving estimates
 - `_call_routes_api` for Google Routes `computeRouteMatrix`
 - `_cache_get` / `_cache_put` for the SQLite route cache
 
@@ -33,4 +34,4 @@ rows instead of calling the paid API.
 
 Routing is one of the richest parts of the system. A future version could make
 anchor sets easier to inspect, explain why a route matters on the card, or make
-cache behavior more testable without changing the personal assumptions.
+cache behavior more testable without changing the Chicago-centered assumptions.

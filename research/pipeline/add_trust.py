@@ -1,8 +1,7 @@
-"""Landlord identity + 'is this a real listing?' checks, added to the payload."""
+"""Photo reuse and asking-rent checks, added to the Chicago listing payload."""
 import collections, json, re, statistics
 
 apts = json.load(open("app_data.json"))
-LL = json.load(open("landlords.json"))
 
 
 def norm(s):
@@ -33,37 +32,15 @@ flag_counts = collections.Counter()
 for a in apts:
     checks, warns = [], []
 
-    # landlord
-    k = norm(a["addr"])
-    ll = LL.get(k) if k else None
-    big_enough = (a.get("units") or 0) >= 4
-    if ll and big_enough:
-        a["landlord"] = {"name": ll["owner"], "since": (ll.get("since") or "")[:10],
-                         "portfolio": ll.get("portfolio", 1), "conf": "registered"}
-        checks.append("Landlord entity registered with the city at this address")
-    elif ll:
-        a["landlord"] = {"name": ll["owner"], "since": (ll.get("since") or "")[:10],
-                         "portfolio": ll.get("portfolio", 1), "conf": "weak"}
-        warns.append("A business is registered here, but the building is small enough "
-                     "that it may not be the landlord")
-    else:
-        a["landlord"] = None
-        if big_enough:
-            warns.append("No landlord entity registered at this address")
-
-    # address verifiability
-    if a.get("parcel_ok") and not a.get("fuzzy"):
-        checks.append("Address matches a real building on the city parcel map")
-    elif a.get("fuzzy"):
+    # Location precision is reported separately; there is no Chicago parcel
+    # match in this pipeline.
+    if a.get("fuzzy"):
         warns.append("The source published only an approximate map pin")
         flag_counts["fuzzy"] += 1
-    else:
-        warns.append("We could not match this address to a building on the parcel map")
-        flag_counts["nomatch"] += 1
 
     # building record exists
     if a.get("yr"):
-        checks.append(f"Building on record since {a['yr']}")
+        checks.append(f"Year built published as {a['yr']}")
 
     # photo reuse
     dupes = [p for p in (a.get("photos") or [])[:5] if p in reused]
@@ -86,7 +63,7 @@ for a in apts:
                      f"{'a studio' if a['beds']==0 else str(a['beds'])+'bd'} in this data set")
         flag_counts["cheap"] += 1
     elif m:
-        checks.append("Rent is in a normal range for its size")
+        checks.append("Rent is in a normal range for its bedroom count in this search")
 
     # no photos at all
     if not a.get("photo"):
@@ -103,8 +80,7 @@ json.dump(apts, open("app_data.json", "w"), separators=(",", ":"))
 lv = collections.Counter(a["trust"]["level"] for a in apts)
 print(f"\ntrust levels: {dict(lv)}")
 print("flag counts:", dict(flag_counts))
-print(f"with landlord named: {sum(1 for a in apts if a.get('landlord')):,}")
-print(f"  high confidence:   {sum(1 for a in apts if a.get('landlord') and a['landlord']['conf']=='registered'):,}")
+print(f"with year built available: {sum(1 for a in apts if a.get('yr')):,}")
 worst = sorted(apts, key=lambda a: -len(a["trust"]["warn"]))[:6]
 print("\nlistings with the most warnings:")
 for a in worst:

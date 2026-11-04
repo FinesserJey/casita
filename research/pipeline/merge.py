@@ -1,6 +1,5 @@
 """Normalise every source into one canonical apartment record, then dedupe."""
 import json, math, re, sys, time, collections
-from enrich import City, M_LAT, m_lon
 
 MONEY = re.compile(r"[\d,]+")
 # "514 17th Ave, APT 2" is a doorstep; "mission district" is a shrug.
@@ -21,9 +20,9 @@ def building_of(addr):
     which stops being the same question the moment a source publishes unit
     numbers. Zillow does:
 
-        140 S Van Ness Ave Unit 429
-        140 S Van Ness Ave Unit 743
-        140 S Van Ness Ave Unit 1024
+        123 N State St Unit 429
+        123 N State St Unit 743
+        123 N State St Unit 1024
 
     Three strings, one doorstep. They were read as a crowded pin and all three
     flagged unplaceable, which cost them the parcel match, the "matches a real
@@ -34,7 +33,7 @@ def building_of(addr):
     """
     a = (addr or "").strip().lower()
     # The street portion only. Sources append the city, state and postcode
-    # after the unit -- "140 S Van Ness Ave Unit 743, San Francisco, CA 94103"
+    #     after the unit -- "123 N State St Unit 743, Chicago, IL 60601"
     # -- so a suffix pattern anchored to the end of the string matches the
     # postcode and leaves the unit exactly where it was.
     a = a.split(",")[0].strip()
@@ -304,8 +303,8 @@ def mark_fuzzy(rows):
     Two tells, and the first one carries most of the weight.
 
     A soft pin usually announces itself in the address field: Craigslist rows
-    come through as "mission district", "north beach / telegraph hill" or plain
-    "San Francisco, CA" rather than a street address. Anything without a house
+    may come through as a neighbourhood blurb or plain "Chicago, IL" rather
+    than a street address. Anything without a house
     number in front of a street name was never locatable to begin with.
 
     The second tell is a coordinate serving more than one distinct street
@@ -346,34 +345,28 @@ def run(path="listings_raw.json"):
         for it in items:
             try: flat += fn(it)
             except Exception: pass
-    def in_sf(r):
+    def in_chicago(r):
         try: la, lo = float(r["lat"]), float(r["lon"])
         except (TypeError, ValueError, KeyError): return False
-        return 37.70 <= la <= 37.84 and -122.52 <= lo <= -122.35
+        return 41.84 <= la <= 41.92 and -87.68 <= lo <= -87.58
     before = len(flat)
-    flat = [r for r in flat if r.get("lat") and r.get("lon") and r.get("rent") and in_sf(r)]
+    flat = [r for r in flat if r.get("lat") and r.get("lon") and r.get("rent") and in_chicago(r)]
     for r in flat:                       # sources hand back coords as strings
         r["lat"] = float(r["lat"]); r["lon"] = float(r["lon"])
-    print(f"dropped {before-len(flat):,} rows (missing price/coords or outside SF)")
+    print(f"dropped {before-len(flat):,} rows (missing price/coords or outside downtown Chicago)")
     print(f"normalised rows: {len(flat):,}")
     for s, c in collections.Counter(r["source"] for r in flat).items():
         print(f"   {s:<16} {c:,}")
 
     mark_fuzzy(flat)
 
-    city = City()
-    for r in flat:
-        p, dist = city.parcel_for(float(r["lat"]), float(r["lon"]), r.get("addr"))
-        r["parcel"] = p["blklot"] if p else None
-        r["_p"] = p
-        r["_dist"] = dist
-
     # Canonical key. A known unit number is a strong identifier, so merge on it
     # across every source. Without one, only merge when the price also matches --
     # two Craigslist ads in the same building are usually different units.
     groups = collections.defaultdict(list)
     for r in flat:
-        base = r["parcel"] or f"xy{round(r['lat'],4)},{round(r['lon'],4)}"
+        address = building_of(r.get("addr"))
+        base = address if STREETISH.match(address or "") else f"xy{round(r['lat'],4)},{round(r['lon'],4)}"
         beds = r.get("beds") if r.get("beds") is not None else -1
         if r.get("unit"):
             key = (base, r["unit"], beds)
@@ -386,7 +379,6 @@ def run(path="listings_raw.json"):
         rows.sort(key=lambda x: {"Apartments.com": 0, "Zillow": 1, "Craigslist": 2}
                   .get(x["source"], 3))
         best = rows[0]
-        p = best["_p"] or {}
         rents = [r["rent"] for r in rows if r.get("rent")]
         srcs = sorted({r["source"] for r in rows})
         photos = []
@@ -395,10 +387,9 @@ def run(path="listings_raw.json"):
                 if ph and ph not in photos: photos.append(ph)
         apts.append({
           "id": "|".join(str(k) for k in key),
-          "addr": best.get("addr") or p.get("address"),
-          "parcel_addr": p.get("address"),
+          "addr": best.get("addr"),
           "name": best.get("name"), "unit": best.get("unit"),
-          "hood": best.get("hood") or p.get("neighborhood"),
+          "hood": best.get("hood"),
           "lat": best["lat"], "lon": best["lon"],
           "beds": best.get("beds"), "baths": best.get("baths"), "sqft": best.get("sqft"),
           "rent": min(rents) if rents else None,
@@ -419,22 +410,15 @@ def run(path="listings_raw.json"):
           "special": next((r.get("special") for r in rows if r.get("special")), None),
           "tours": max((r.get("tours") or 0 for r in rows), default=0),
           "n_ads": len(rows), "multi": len(srcs) > 1,
-          "parcel": best["parcel"], "dist_m": best["_dist"],
           "fuzzy_pin": bool(best.get("fuzzy_pin")),
-          "yr": p.get("year_built"), "units": p.get("units"),
-          "rc": p.get("rc_status"), "rc_why": p.get("rc_why"),
-          "novs": p.get("novs"), "complaints": p.get("complaints"),
-          "active": p.get("active_complaints"), "over_year": p.get("abate_over_year"),
-          "abate_median": p.get("abate_median"), "referred": p.get("referred"),
-          "nov_top": p.get("nov_top"),
+          "yr": best.get("yr"), "units": best.get("units"),
         })
     dup = len(flat) - len(apts)
     print(f"\ncanonical apartments: {len(apts):,}   (deduped {dup:,} ads)")
     print(f"  on 2+ platforms: {sum(1 for a in apts if a['multi']):,}")
-    print(f"  matched to a parcel: {sum(1 for a in apts if a['parcel']):,}")
     print(f"  with photos: {sum(1 for a in apts if a['photos']):,}")
     print(f"  with a rating: {sum(1 for a in apts if a['rating']):,}")
-    print(f"  likely rent-controlled: {sum(1 for a in apts if a['rc']=='yes'):,}")
+    print(f"  with 2+ sources: {sum(1 for a in apts if a['multi']):,}")
     json.dump(apts, open("apartments.json", "w"))
     return apts
 

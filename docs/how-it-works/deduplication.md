@@ -23,9 +23,9 @@ After those guards, Casita considers listings to be the same property when:
 - the normalized street addresses match
 
 Address normalization is intentionally small and rental-site-specific. It strips
-Craigslist cross-street suffixes such as `near ...`, removes San Francisco
-location suffixes, drops unit and floor markers, collapses punctuation, and
-normalizes common street-type words like `avenue` to `ave`.
+Craigslist cross-street suffixes such as `near ...`, removes Chicago location
+suffixes, drops unit and floor markers, collapses punctuation, and normalizes
+common street-type words like `avenue` to `ave`.
 
 ## Merge Order
 
@@ -39,8 +39,7 @@ Clusters are sorted by source priority:
 
 The primary listing keeps its existing values. Missing fields are filled from
 secondary listings, so structured sources can provide clean facts while
-Craigslist can still contribute useful text such as dog policy or laundry
-details.
+Craigslist can still contribute useful text such as parking or laundry details.
 
 ## Where It Runs
 

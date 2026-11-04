@@ -303,7 +303,7 @@
        as before. A dropdown of forty neighbourhoods was the version before
        this one and asked the reader to hold the whole city in their head; the
        chips still do that job, they just wait to be asked. */
-    const label = S.hood || S.district || "All of San Francisco";
+    const label = S.hood || S.district || "All of Chicago";
     const open = S.hoodOpen ? " open" : "";
 
     el.innerHTML = `
@@ -322,7 +322,7 @@
       </div>
       ${S.hoodOpen ? `<div class="hoodpanel">
         <div class="hoodrow">
-          <button class="hoodchip ${!S.district && !S.onlySaved && !S.onlyPlans && !S.onlyNew ? "on" : ""}" data-district="">All of SF</button>
+          <button class="hoodchip ${!S.district && !S.onlySaved && !S.onlyPlans && !S.onlyNew ? "on" : ""}" data-district="">All of Chicago</button>
           ${ds.map((d) => `<button class="hoodchip ${d.name === S.district ? "on" : ""}"
             data-district="${esc(d.name)}">${ICON.svg(d.icon, 14)}${esc(d.name)}
             <em>${d.n}</em></button>`).join("")}
@@ -345,7 +345,7 @@
   function leadIn() {
     const n = (S.list || []).length;
     if (!n) return "";
-    const where = S.hood || S.district || "San Francisco";
+    const where = S.hood || S.district || "Chicago";
     /* Deliberately not "posted in the last week". Every source measures
        freshness differently and two of them do not publish it at all, so a
        date-based filter would quietly favour the sources that happen to say.
@@ -594,8 +594,7 @@
      plain text rather than growing a button that opens something irrelevant. */
   const VIZ_FOR = {
     street:    { tab: "street", verb: "See the block" },
-    quiet:     { tab: "quiet",  verb: "See the noise" },
-    nightlife: { tab: "quiet",  verb: "See what's nearby" },
+    nightlife: { tab: "walks", verb: "See what's nearby" },
     walk:      { tab: "walks",  verb: "See the walks" },
     commute:   { tab: "life",   verb: "See the route" },
     transit:   { tab: "life",   verb: "See the route" },
@@ -642,7 +641,7 @@
           <div>
             <h2>${titleOf(a)}</h2>
             <p class="hood">${(a.loc || {}).level === "neighbourhood"
-              ? "Address not published" : esc(a.hood || "San Francisco")}
+              ? "Address not published" : esc(a.hood || "Chicago")}
               ${(a.src || []).map((s) => `<span class="srcbadge ${SRC_CLASS[s.n] || "other"}"
                 title="${esc(s.n)}${s.c > 1 ? ` · ${s.c} ads` : ""}">${esc(s.n)}</span>`).join("")}</p>
             <p class="price">
@@ -816,12 +815,12 @@
       // building and let the panel explain what the listing actually is.
       return esc(a.addr) + (a.unit && !FACTORS.isPlan(a) ? ` #${esc(a.unit)}` : "");
     const beds = a.beds === 0 ? "Studio" : a.beds ? `${a.beds}-bed` : "Home";
-    return `${beds} in ${esc(a.hood || "San Francisco")}`;
+    return `${beds} in ${esc(a.hood || "Chicago")}`;
   }
   // The filmstrip has room for far less, but the same rule applies.
   function shortLabel(a) {
     if ((a.loc || {}).level !== "neighbourhood") return shortAddr(a);
-    return a.hood || "San Francisco";
+    return a.hood || "Chicago";
   }
 
   /* Which site this came from, said on the card and on every thumbnail.
@@ -880,33 +879,33 @@
     row("Size", a.sqft ? `${num(a.sqft)} sq ft` : "not published");
     row("Built", a.yr);
     row("Units in building", a.units ? num(a.units) : null);
-    row("Rent control", a.rc === "yes" ? "Likely - " + esc(a.rc_why || "")
-        : a.rc === "no" ? "City records say no" : "Unclear");
     row("In-unit laundry", a.wd === true ? "Yes" : a.wd === false ? "Not mentioned" : "Unknown");
     row("Amenities listed", (a.unit_amen || []).join(", ") || "none published");
     row("Pets", a.pet ? (a.pet.ok ? `Allowed${a.pet.monthly ? ` - ${money(a.pet.monthly)}/mo` : ""}` : "Not stated") : "No policy published");
-    row("Building violations", `${num(a.novs)} on file · ${num(a.active)} open · ${num(a.over_year)} open over a year`);
     row("Availability", a.avail === "live" ? `Verified live (${esc(a.avail_src || "")})`
         : a.avail === "unknown" ? "Not checkable - this source has no free liveness check"
         : "May be gone");
 
-    const st = a.street || {}, sp = a.street_pct || {};
-    const street = ["encampment", "break_in", "violent", "cleaning"].map((k) =>
-      `<div class="ev-row"><span>${STREET_LABEL[k]}</span>
-        <b>${num(st[k])} reports · busier than ${Math.round(FACTORS.streetPct(a, k))}% of listings</b></div>`).join("");
+    const st = a.street || {};
+    const street = ["graffiti", "vehicle_theft", "violent"].map((k) => {
+      const pct = FACTORS.streetPct(a, k);
+      return `<div class="ev-row"><span>${STREET_LABEL[k]}</span>
+        <b>${num(st[k])} reports · ${pct == null ? "comparison unavailable"
+          : `higher report count than ${Math.round(pct)}% of listings`}</b></div>`;
+    }).join("");
 
     const tr = a.trust || {};
     return `
       <div class="ev-grid">
         <section><h4>The unit</h4>${rows.join("")}</section>
-        <section><h4>Street records, 250m radius, last 12 months</h4>${street}
-          <p class="ev-src">Source: SF 311 service requests and SFPD incident reports.
-            Percentiles compare this address with the other listings in your search, and are
+        <section><h4>Chicago public reports, approximate 250m area, last 12 months</h4>${street}
+          <p class="ev-src">Sources: Chicago 311 graffiti requests and Chicago Police Department
+            block-level reports. Percentiles compare this address with the other listings in your search, and are
             pulled toward the middle where a block has few reports on file.</p></section>
         <section><h4>What we could and couldn't verify</h4>
           ${(tr.ok || []).map((x) => `<div class="ev-ok">✓ ${esc(x)}</div>`).join("")}
           ${(tr.warn || []).map((x) => `<div class="ev-warn">! ${esc(x)}</div>`).join("")}
-          <p class="ev-src">${esc(GEO.pinNote(a) || "This address matched a building on the city parcel map.")}</p>
+          <p class="ev-src">${esc(GEO.pinNote(a) || "Location precision depends on the source listing.")}</p>
         </section>
         <section><h4>Where this came from</h4>
           ${(a.src || []).map((s) => `<div class="ev-row"><span>${esc(s.n)}</span>
@@ -917,8 +916,8 @@
   }
 
   const STREET_LABEL = {
-    encampment: "Homelessness-related reports", break_in: "Vehicle break-ins",
-    violent: "Violent incidents", cleaning: "Service / cleaning requests",
+    graffiti: "Graffiti removal requests", vehicle_theft: "Motor vehicle theft reports",
+    violent: "Violent-crime reports",
   };
 
   /* ============================================================
@@ -981,9 +980,7 @@
   const TAB_DEF = {
     life:      { label: "My life",  icon: "compass" },
     walks:     { label: "Walks",    icon: "dog" },
-    quiet:     { label: "Quiet",    icon: "moon" },
-    street:    { label: "Safety",   icon: "shield" },
-    residents: { label: "Residents", icon: "people" },
+    street:    { label: "City reports", icon: "shield" },
     verify:    { label: "Is it real?", icon: "search" },
   };
 
@@ -993,10 +990,9 @@
     const prio = P.priorities || {};
     // Anyone with a dog gets Walks second, because they will open it every time.
     if ((P.pets || "none") === "dog") out.push("walks");
-    if (prio.quiet || prio.nightlife) out.push("quiet");
     if (prio.street) out.push("street");
-    if (prio.residents || prio.management) out.push("residents");
-    if (prio.walk || prio.nightlife) out.push("walks");
+    if (prio.walk || prio.nightlife || prio.bakery || prio.dining
+        || prio.culture || prio.shopping) out.push("walks");
     // Always leave a way to see the street and whether the listing is real.
     // Nobody puts "check this isn't a scam" on a wishlist, and everybody wants
     // it the moment they are about to send someone a deposit.
@@ -1027,7 +1023,7 @@
   /* ---------- framing ---------- */
   function frameFor() {
     const it = cur();
-    if (!it) return { lat: 37.7825, lon: -122.4143, zoom: 14 };
+    if (!it) return { lat: 41.88, lon: -87.64, zoom: 14 };
     const a = it.a;
     if (S.tab === "life") {
       const lg = GEO.legs(a, S.P);
@@ -1041,10 +1037,10 @@
                : { lat: a.lat, lon: a.lon, zoom: 15.2 };
     }
     // The other two views are about this block, not this city.
-    return { lat: a.lat, lon: a.lon, zoom: S.tab === "quiet" ? 15.1 : 14.6 };
+    return { lat: a.lat, lon: a.lon, zoom: 14.6 };
   }
 
-  const isMapTab = () => ["life", "walks", "quiet", "street"].includes(S.tab);
+  const isMapTab = () => ["life", "walks", "street"].includes(S.tab);
 
   function reframe(animate) {
     $("viz").classList.toggle("is-map", isMapTab());
@@ -1069,7 +1065,6 @@
     MK.clear();
     if (S.tab === "life") drawLifeView(it.a, cx);
     else if (S.tab === "walks") drawWalkView(it.a, cx);
-    else if (S.tab === "quiet") drawQuietView(it.a, cx);
     else if (S.tab === "street") drawStreetView(it.a, cx);
     return S.phase < 1;
   }
@@ -1236,7 +1231,7 @@
   }
 
   /* The apartment is the one thing on this canvas that must never be lost.
-     Over a dense encampment or break-in layer the orange pin was reading as
+     Over a dense report layer the orange pin was reading as
      just another hot cell, so it now sits in a punched-out halo: a soft light
      disc knocks the heat back, and the pin is drawn on top of that. Always
      last, in every view, whatever is underneath. */
@@ -1325,76 +1320,21 @@
     homePin(cx, home);
   }
 
-  /* ---------- QUIET ----------
-     The map stops being a map of places and becomes a map of a time of day.
-     Two real surfaces: where 311 noise reports cluster after 10 PM, and where
-     the late-licensed venues are. Nothing simulated. */
-  let nightCells = null;
-  function nightSurface() {
-    if (nightCells) return nightCells;
-    // Per-building 311 noise volume, weighted by the share of it that lands
-    // between 22:00 and 05:00. Aggregated onto a ~90m grid so overlapping
-    // buildings on one block read as one bloom.
-    const cells = new Map();
-    for (const a of A) {
-      const w = (a.noise || 0) * cl((a.night_pct || 0) / 100, 0, 1);
-      if (w <= 0) continue;
-      const k = `${Math.round(a.lat / 0.0011)},${Math.round(a.lon / 0.0011)}`;
-      cells.set(k, (cells.get(k) || 0) + w);
-    }
-    nightCells = [...cells.entries()].map(([k, v]) => {
-      const [i, j] = k.split(",").map(Number);
-      return [i * 0.0011, j * 0.0011, v];
-    });
-    return nightCells;
-  }
-
-  const NIGHT_RAMP = [[237, 233, 247], [166, 160, 214], [122, 92, 178], [58, 36, 102]];
-
-  function drawQuietView(a, cx) {
-    /* Dusk, not erasure. The first version washed the basemap 72% toward paper
-       so the noise layer would pop, and on a genuinely quiet block — which has
-       almost no noise layer to show — that left a white rectangle. The reader
-       is supposed to watch the SAME streets change meaning, so the streets have
-       to survive the transition. A light indigo tint does the work the white
-       wash was failing to do. */
-    MK.drawBasemap(0.14);
-    cx.fillStyle = `rgba(48,40,92,${0.17 * ease(S.phase)})`;
-    cx.fillRect(0, 0, MK.w, MK.h);
-    cx.globalAlpha = 1;
-    MK.drawHeat(nightSurface(), "night", NIGHT_RAMP, 0.8 * ease(S.phase));
-
-    // Late-licensed venues, drawn as points because a count is the honest unit
-    // — these are addresses, not a field.
-    const t = ease(cl((S.phase - 0.25) / 0.6, 0, 1));
-    if (t > 0) {
-      for (const p of GEO.PL) {
-        if (!["bar", "club", "music"].includes(p.k)) continue;
-        const q = MK.proj(p.la, p.lo);
-        if (q[0] < -20 || q[0] > MK.w + 20 || q[1] < -20 || q[1] > MK.h + 20) continue;
-        cx.fillStyle = `rgba(228,98,42,${0.75 * t})`;
-        cx.beginPath(); cx.arc(q[0], q[1], 2.6, 0, 7); cx.fill();
-      }
-    }
-    homePin(cx, MK.proj(a.lat, a.lon));
-  }
-
   /* ---------- STREET ----------
-     Four separate city datasets, grouped under one heading for navigation and
+     Three separate city datasets, grouped under one heading for navigation and
      kept separable underneath. They are deliberately NOT summed into a single
      safety number: they measure different things, they are reported by
      different people for different reasons, and adding them would manufacture
      a scientific-looking score out of four incomparable series. */
   const STREET_RAMP = {
-    encampment: [[254, 243, 199], [252, 191, 73], [234, 120, 48], [157, 44, 32]],
-    break_in:   [[237, 233, 247], [178, 164, 216], [136, 86, 167], [77, 26, 110]],
+    graffiti:   [[236, 242, 236], [168, 199, 171], [100, 150, 120], [38, 86, 74]],
+    vehicle_theft: [[237, 233, 247], [178, 164, 216], [136, 86, 167], [77, 26, 110]],
     violent:    [[254, 232, 224], [250, 160, 130], [225, 80, 70], [140, 20, 30]],
-    cleaning:   [[236, 242, 236], [168, 199, 171], [100, 150, 120], [38, 86, 74]],
   };
 
   function drawStreetView(a, cx) {
     MK.drawBasemap(0.24);
-    const k = S.street || "violent";
+    const k = S.street || "graffiti";
     const cells = STREET_GRID[k] || [];
     MK.drawHeat(cells, k, STREET_RAMP[k], 0.82 * ease(S.phase));
     // The radius every number on the panel is measured over, drawn so the
@@ -1417,8 +1357,7 @@
     const it = cur();
     if (!it) { $("vizpanel").innerHTML = ""; $("vizhead").innerHTML = ""; return; }
     const { a, f } = it;
-    const H = { life: lifeHead, walks: walksHead, quiet: quietHead,
-                street: streetHead, residents: residentsHead, verify: verifyHead }[S.tab];
+    const H = { life: lifeHead, walks: walksHead, street: streetHead, verify: verifyHead }[S.tab];
     const out = H(a, f);
     $("vizhead").innerHTML = out.head || "";
     $("vizpanel").innerHTML = out.body || "";
@@ -1480,48 +1419,11 @@
     };
   }
 
-  function quietHead(a, f) {
-    const q = f.F.quiet, lively = S.P.wantsLively;
-    const late = a.late || 0;
-    const pct = q && q.pct != null ? q.pct : null;
-    return {
-      head: `<h3>${lively ? (pct >= 55 ? "There's something going on" : "Quieter than you might want")
-                          : (pct >= 55 ? "Quiet after 10 PM" : "Livelier after dark than most")}</h3>
-        <p>${pct == null ? "We don't have enough on this block to say."
-          : `${pct >= 55 ? "Less" : "More"} late-night activity than about
-             ${pct >= 55 ? pct : 100 - pct}% of comparable blocks in your search.`}</p>`,
-      body: `
-        <div class="hours">
-          <p class="lab">311 noise reports on this block, by hour</p>
-          <div class="hourbar">${(a.hours || []).map((h, i) => {
-            const max = Math.max(1, ...(a.hours || [1]));
-            const night = i >= 22 || i < 5;
-            return `<i style="height:${Math.max(3, h / max * 100)}%;
-              background:${night ? "var(--night)" : "var(--line-2)"}" title="${hr(i)}: ${h}"></i>`;
-          }).join("")}</div>
-          <div class="hourlab"><span>12 AM</span><span>noon</span><span>11 PM</span></div>
-        </div>
-        <div class="rows">
-          <div class="row"><span>Venues licensed past 2 AM nearby</span><b>${late}</b></div>
-          <div class="row"><span>Bars, clubs and music within a 10-min walk</span>
-            <b>${GEO.countWithin(a, ["bar", "club", "music"], 800)}</b></div>
-          <div class="row"><span>Share of noise reports after 10 PM</span><b>${a.night_pct}%</b></div>
-        </div>
-        ${(a.vnames || []).length ? `<p class="fine">Closest late venues:
-          ${(a.vnames || []).slice(0, 3).map((v) => `${esc(v.n)} (${v.d}m)`).join(", ")}.</p>` : ""}
-        <p class="fine">Sources: SF 311 noise complaints, SF entertainment permits, OpenStreetMap.</p>`,
-    };
-  }
-
   function streetHead(a, f) {
-    const p = f.F.street;
-    const summary = p == null || p.pct == null ? "We don't have enough reports here to characterise this block."
-      : p.pct >= 66 ? "This block reports fewer incidents than most of your search."
-      : p.pct >= 34 ? "This block is about average for your search."
-      : "This block reports more incidents than most of your search.";
-    const keys = ["encampment", "break_in", "violent", "cleaning"];
+    const summary = "Counts are shown by report type and compared with other listings; they are not a safety rating.";
+    const keys = ["graffiti", "vehicle_theft", "violent"];
     return {
-      head: `<h3>Safety of the block</h3><p>${summary}</p>`,
+      head: `<h3>Chicago public reports</h3><p>${summary}</p>`,
       body: `
         <div class="rows street-rows">${keys.map((k) => {
           const pct = FACTORS.streetPct(a, k);
@@ -1533,96 +1435,16 @@
         ${S.street ? `<div class="street-detail">
             <div class="rows">
               <div class="row"><span>Reports in the last 12 months</span><b>${num((a.street || {})[S.street])}</b></div>
-              <div class="row"><span>Radius measured</span><b>250 m around this address</b></div>
+              <div class="row"><span>Approximate area</span><b>250 m around this address</b></div>
               <div class="row"><span>Compared with</span><b>the other ${num(S.list.length)} listings in your search</b></div>
               <div class="row"><span>Busier than</span><b>${Math.round(FACTORS.streetPct(a, S.street))}% of them</b></div>
             </div>
-            <p class="fine">Source: ${S.street === "violent" || S.street === "break_in"
-              ? "SFPD incident reports" : "SF 311 service requests"}, rolling 12 months.
-              Percentiles are pulled toward the middle on blocks with few reports on file, so an
-              empty block does not read as a calm one.</p>
+            <p class="fine">Source: ${S.street === "violent" || S.street === "vehicle_theft"
+              ? "Chicago Police Department block-level reports" : "Chicago 311 graffiti removal requests"}, rolling 12 months.
+              CPD locations are approximate and reports are not convictions or address-level findings.</p>
           </div>`
-        : `<p class="fine">Tap a row to map it on its own. These are four separate city datasets -
+        : `<p class="fine">Tap a row to map it on its own. These are separate report types -
             we group them for navigation, we don't add them into a safety score.</p>`}`,
-    };
-  }
-
-  /* ---------- COST ----------
-     The panel takes the whole canvas here, because the honest answer to "what
-     would I pay" is a table with three confidence levels in it, not a map. */
-  function costHead(a) {
-    const act = a.act ? a.act[0] : a.rent;
-    const hi = a.act && a.act[1] !== a.act[0] ? a.act[1] : null;
-    const util = Math.max(0, act - a.rent);
-    const verified = a.est === "verified";
-    const petFee = a.pet && a.pet.monthly && (S.P.must || []).includes("pets") ? a.pet.monthly : 0;
-    return {
-      head: `<h3>What you'd likely pay</h3>
-        <p>Against the ${money(S.P.comfort)} you called comfortable.</p>`,
-      body: `
-        <div class="cost">
-          <div class="cost-row"><span>Listed rent</span>
-            <b>${money(a.rent)}</b><em class="tagv">Verified</em></div>
-          <div class="cost-row"><span>Utilities</span>
-            <b>${util ? money(util) + (hi ? `–${money(hi - a.rent)}` : "") : "-"}</b>
-            <em class="${verified ? "tagv" : "tage"}">${verified ? "Verified" : "Estimated"}</em></div>
-          ${petFee ? `<div class="cost-row"><span>Pet rent</span><b>${money(petFee)}</b>
-            <em class="tagv">Verified</em></div>` : ""}
-          <div class="cost-row"><span>Other mandatory fees</span><b>-</b>
-            <em class="tagu">Unknown</em></div>
-          <div class="cost-total"><span>Estimated monthly total</span>
-            <b>${money(act + petFee)}${hi ? `–${money(hi + petFee)}` : ""}</b></div>
-        </div>
-        <p class="fine">California does not require all-in pricing, so anything a source did not
-          publish stays marked unknown rather than assumed to be zero. Utilities are a range because
-          building attributes explain only about a third of the variation between similar units.</p>
-        <div class="rows">
-          <div class="row"><span>Against your comfortable number</span>
-            <b style="color:${act <= S.P.comfort ? "var(--good)" : "var(--accent)"}">
-              ${act <= S.P.comfort ? `${money(S.P.comfort - act)} under` : `${money(act - S.P.comfort)} over`}</b></div>
-          <div class="row"><span>Against your maximum</span>
-            <b>${act <= S.P.maxBudget ? `${money(S.P.maxBudget - act)} of headroom` : "over your ceiling"}</b></div>
-          ${a.mkt_ratio ? `<div class="row"><span>Against similar SF units</span>
-            <b>${Math.round(a.mkt_ratio * 100)}% of the going rate for its size</b></div>` : ""}
-        </div>`,
-    };
-  }
-
-  /* ---------- RESIDENTS ----------
-     Human experience, or an honest blank. Missing reviews are never converted
-     into a good score - that is the single most common lie in this category. */
-  function residentsHead(a) {
-    const g = a.greview;
-    if (!g && !a.rating) {
-      return {
-        head: `<h3>No resident reviews</h3>
-          <p>Nobody has reviewed this building on the sources we read. That is not a good sign or a
-             bad one - it is nothing.</p>`,
-        body: `<div class="rows">
-            <div class="row"><span>Building violations on file</span><b>${num(a.novs)}</b></div>
-            <div class="row"><span>Open cases</span><b>${num(a.active)}</b></div>
-            <div class="row"><span>Open more than a year</span><b>${num(a.over_year)}</b></div>
-          </div>
-          <p class="fine">The city's inspection record is the only resident-adjacent evidence we have
-            for this address. Source: SF DBI complaints.</p>`,
-      };
-    }
-    const themes = (g && g.themes) || [];
-    return {
-      head: `<h3>Residents say</h3>
-        <p><b class="big">${a.rating ?? g.score}</b> / 5 · ${num(a.rating_n || g.n)}
-           ${a.rating_src === "Google" ? "Google" : "renter"} reviews</p>`,
-      body: `
-        ${themes.length ? `<div class="themes">${themes.map((t) =>
-          `<div class="theme ${t.neg >= t.n / 2 ? "neg" : "pos"}">
-            <span>${t.neg >= t.n / 2 ? "⚠" : "👍"}</span>
-            <b>${esc(t.t)}</b><em>${t.n} mention${t.n === 1 ? "" : "s"}</em></div>`).join("")}</div>`
-        : `<p class="fine">Not enough reviews to pull out themes.</p>`}
-        ${g && g.quote ? `<blockquote>${esc(g.quote.q)}
-          <cite>${g.quote.s}/5 · ${esc(g.quote.d)}</cite></blockquote>` : ""}
-        <p class="fine">${g ? `Read from ${num(g.sampled)} of ${num(g.n)} published reviews.` : ""}
-          Source: ${esc(a.rating_src || "Apartments.com")}. We show what reviewers wrote; we don't
-          summarise it into a claim about the landlord.</p>`,
     };
   }
 
@@ -1740,10 +1562,8 @@
             <b>${a.est === "verified" ? "verified for this unit" : "estimated from the building"}${
               a.sqft ? ` · ${num(a.sqft)} sq ft` : ""}</b></div>
         </div>
-        <p class="fine">Casita doesn't look at the pictures - that would need a paid vision API.
-          It checks something cheaper and nearly as useful: whether anyone published facts about
-          <em>this unit</em> rather than the building. 35% of listings here have four or more
-          photos and not one unit-level fact.</p>
+        <p class="fine">Building-level details may not apply to this specific unit. Confirm
+          unverified features with the property before applying.</p>
 
         <p class="lab">What we could check</p>
         <div class="checks">
@@ -1753,23 +1573,15 @@
             ? `<p class="fine">Nothing on file for this address.</p>` : ""}
         </div>
 
-        <p class="lab">Who owns the building</p>
-        <div id="ownerbox">
-          <p class="fine">Looked up one address at a time from public property records.</p>
-          ${(a.loc || {}).level === "neighbourhood"
-            ? `<p class="fine">No published address to look up - this listing gives a neighbourhood only.</p>`
-            : `<button class="btn" id="ownerbtn" data-addr="${esc(a.addr)}">Look up the owner</button>`}
-        </div>
-
         <p class="lab">Where this came from</p>
         <div class="rows">
           ${(a.src || []).map((s) => `<div class="row"><span>${esc(s.n)}${
             s.c > 1 ? ` · ${s.c} ads` : ""}</span><b><a href="${esc(s.u)}" target="_blank"
             rel="noopener">open the original →</a></b></div>`).join("")}
         </div>
-        <p class="fine">Craigslist, Zillow and Apartments.com, matched to city records: the SF
-          parcel map, DBI complaints, SFPD incidents and 311 requests (rolling 12 months), plus
-          OpenStreetMap for what is nearby.</p>`,
+        <p class="fine">Listing sources are paired with approximate Chicago public-report layers
+          and OpenStreetMap context. CPD locations are block-level estimates; no report is
+          assigned to a specific person or address.</p>`,
     };
   }
 
@@ -1899,7 +1711,7 @@
     box.innerHTML = `<div class="rows">
         <div class="row"><span>Written about the place</span>
           <b class="pill ${veryThin ? "bad" : thin ? "mid" : "good"}">${num(r.bodyChars)} characters</b></div>
-        <div class="row"><span>Against other SF postings</span>
+        <div class="row"><span>Against other Chicago postings</span>
           <b>${thin ? `shorter than about 75%` : `around or above the median`} (median ${num(r.bodyMedian)})</b></div>
         <div class="row"><span>Phone or email in the text</span>
           <b>${r.emailsInBody || r.phonesInBody
@@ -1913,58 +1725,6 @@
         the post "accepts replies": Craigslist ships that button on every page, so the check would
         say yes every time. Contact runs through their anonymous relay, which is why no phone or
         email in the text is normal rather than a warning sign.</p>`;
-  }
-
-  /* ---------- owner lookup ----------
-     Proxied through serve.py, which holds the API key, caches every answer
-     forever and refuses to exceed the free monthly allowance. The button can
-     therefore be pressed without any risk of running up a bill, and the panel
-     reports what is left rather than hiding the meter. */
-  const ownerCache = {};
-  async function lookupOwner(addr) {
-    const box = $("ownerbox");
-    // Owner lookups return the names of identifiable people out of public
-    // property records. That is a local-tool affordance, not something to
-    // expose from a public URL to anyone who finds it.
-    if (window.CASITA_PUBLIC) { box.innerHTML = LOCAL_ONLY; return; }
-    if (ownerCache[addr]) return renderOwner(ownerCache[addr]);
-    box.innerHTML = `<p class="fine">Looking up public property records…</p>`;
-    let r;
-    try {
-      r = await (await fetch("/api/owner?addr=" + encodeURIComponent(addr))).json();
-    } catch {
-      box.innerHTML = `<p class="fine">Couldn't reach the local server - owner lookups need
-        <code>research/serve.py</code> running.</p>`;
-      return;
-    }
-    if (r.error) {
-      box.innerHTML = `<p class="fine">${esc(r.note || r.error)}</p>`;
-      return;
-    }
-    ownerCache[addr] = r;
-    renderOwner(r);
-  }
-
-  function renderOwner(r) {
-    const box = $("ownerbox");
-    if (!r.found) {
-      box.innerHTML = `<div class="rows"><div class="row"><span>Owner on record</span>
-        <b>Nothing published for this address</b></div></div>
-        <p class="fine">The records service had no owner for this address. That is common for
-          smaller buildings and does not mean anything is wrong.</p>`;
-      return;
-    }
-    box.innerHTML = `<div class="rows">
-        <div class="row"><span>Owner on record</span><b>${r.names.map(esc).join(", ")}</b></div>
-        ${r.type ? `<div class="row"><span>Type</span><b>${esc(r.type)}</b></div>` : ""}
-        ${r.lastSale ? `<div class="row"><span>Last sold</span><b>${esc(r.lastSale)}</b></div>` : ""}
-        ${r.ownerOccupied != null ? `<div class="row"><span>Owner-occupied</span>
-          <b>${r.ownerOccupied ? "Yes" : "No"}</b></div>` : ""}
-      </div>
-      <p class="fine">From public property records${r.cached ? ", cached from an earlier lookup" : ""}.
-        ${r.left != null ? `${r.left} lookups left this month.` : ""}
-        These are lawfully public names attached to a parcel. We show the record and nothing
-        inferred from it - no claims about how this owner behaves as a landlord.</p>`;
   }
 
   /* ---------- re-check availability ----------
@@ -2045,7 +1805,7 @@
       "[data-street],[data-open],[data-zoom],[data-recenter],[data-theme-set],[data-photo]," +
       "[data-walk],[data-hood],[data-district],[data-saved],[data-hoodtoggle],[data-sort]," +
       "[data-plans],[data-opened],[data-unpass],[data-showpassed],[data-onlynew]," +
-      "#ownerbtn,#recheck,#deepbtn");
+      "#recheck,#deepbtn");
     if (!t) return;
     if (t.dataset.tab) return setTab(t.dataset.tab);
     if (t.dataset.pick) return select(+t.dataset.pick);
@@ -2081,7 +1841,6 @@
       return;
     }
     if (t.id === "deepbtn") return deepCheck(t.dataset.url);
-    if (t.id === "ownerbtn") return lookupOwner(t.dataset.addr);
     if (t.id === "recheck") return recheck();
     if (t.dataset.zoom) return MK.zoomAround(+t.dataset.zoom, MK.w / 2, MK.h / 2);
     if (t.dataset.recenter !== undefined) { reframe(true); return; }

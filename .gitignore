@@ -25,6 +25,7 @@ htmlcov/
 .env.local
 .envrc
 .secrets/
+.firebaserc
 
 # Casita runtime artifacts
 casita.db
@@ -33,6 +34,7 @@ casita.db-journal
 detail_cache/
 screenshots/
 tmp/
+.firebase/
 
 # Docs build output
 site/

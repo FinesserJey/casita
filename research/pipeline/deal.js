@@ -6,9 +6,7 @@
    It exists because of Craigslist. An ad there is whatever the poster typed,
    and the cheapest listings in this data set are a mix of two very different
    things: real bargains, and posts that are cheap precisely because nothing
-   behind them is real. Price alone cannot tell them apart. A $1,600 one-bed in
-   Nob Hill is either a rent-controlled walk-up whose tenant of eleven years
-   finally moved out, or it is a photograph of someone else's apartment.
+   behind them is real. Price alone cannot tell them apart.
 
    So this does not score cheapness. It cross-examines it:
 
@@ -17,8 +15,8 @@
      CORROBORATION independent evidence the place exists as described
 
    A deep discount with three concerns and nothing corroborating it is a
-   different object from the same discount on a 1907 rent-controlled building
-   that two sources list, the city has inspected, and residents have reviewed.
+   different object from the same discount on a building that two sources list
+   and residents have reviewed.
    The first gets a warning. The second gets told it is a rare find.
 
    Two rules it holds to:
@@ -219,17 +217,9 @@ const DEAL = (() => {
         src: "Craigslist location policy" });
 
     /* --- deposits and how you are asked to pay ---
-       California caps a security deposit at one month's rent for most landlords
-       (AB 12, in force since July 2024; small owners of four units or fewer may
-       ask two), and a pet deposit counts inside that cap rather than on top of
-       it. The FTC's line on payment is blunter: being asked to wire money, or
+       The FTC's line on payment is blunter: being asked to wire money, or
        send it by gift card or a peer-to-peer app, before seeing the place is
        the single most reliable sign of a rental scam. */
-    const dep = (a.pet || {}).onetime || 0;
-    if (dep && rent && dep > rent)
-      concerns.push({ id: "deposit_cap", sev: "high",
-        text: `A ${money(dep)} pet deposit on ${money(rent)} rent - California counts pet deposits inside the one-month deposit cap`,
-        src: "CA Civil Code §1950.5 as amended by AB 12" });
     if (PAY_RISK.test(words))
       concerns.push({ id: "payment", sev: "high",
         text: "The ad mentions wiring money or paying by app or gift card - the FTC calls this the surest sign of a rental scam",
@@ -280,10 +270,6 @@ const DEAL = (() => {
        a signal that is always on is not a signal, it just drags every listing
        from one source toward "suspect" regardless of merit. The location
        weakness is already reported, honestly and separately, as soft_pin. */
-    if (!a.parcel_ok && (a.loc || {}).level !== "neighbourhood")
-      concerns.push({ id: "no_parcel", sev: "med",
-        text: "The address did not match any building on the city parcel map",
-        src: "SF parcel map" });
 
     /* --- geometry that cannot be true --- */
     if (a.sqft && a.beds >= 1 && a.sqft / a.beds < 160)
@@ -298,25 +284,15 @@ const DEAL = (() => {
         text: "Only on Craigslist, where the ad is whatever the poster typed, and priced well under the area",
         src: "sources" });
 
-    /* ---------- legitimate reasons a price can be low ----------
-       This half matters as much as the other. Without it the auditor would
-       flag every rent-controlled walk-up in the city, which is most of the
-       genuinely good deals in San Francisco. */
-    if (a.rc === "yes")
-      explains.push(`Rent control applies here (${esc(a.rc_why || "meets the SF Rent Ordinance test")}), which holds rents below market between tenancies`);
+    /* ---------- legitimate reasons a price can be low ---------- */
     if (a.yr && a.yr < 1950 && (a.units || 0) < 25)
       explains.push(`A small ${a.yr} building - older walk-ups list below newer stock with the same bedroom count`);
-    if (a.street_pct && FACTORS.streetPct(a, "violent") >= 75)
-      explains.push("The block reports more incidents than most, which is reflected in what it can ask");
     if ((a.scores || {}).sound >= 75)
       explains.push("It is a noisy address, which discounts rent honestly");
 
     /* ---------- independent confirmation ---------- */
     if ((a.src || []).length > 1)
       corroborates.push(`Listed on ${a.src.length} independent sites that agree on the address`);
-    if (a.parcel_ok) corroborates.push("Address matches a real building on the city parcel map");
-    if (a.landlord && a.landlord.conf === "registered")
-      corroborates.push("A landlord entity is registered with the city at this address");
     if ((a.rating_n || 0) >= 5)
       corroborates.push(`${num(a.rating_n)} residents have reviewed this building`);
     if (a.avail === "live") corroborates.push("Still present in the most recent availability sweep");

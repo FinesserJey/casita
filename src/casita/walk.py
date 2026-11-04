@@ -1,10 +1,6 @@
-"""Walking-time estimates from a listing to named anchors.
+"""Walking and driving estimates from Chicago listings to named anchors.
 
-Two anchor groups:
-  - BEACHES: any of Baker / China / Ocean — used as "nearest beach".
-  - BAKERIES: Arsicault (Inner Richmond) and Arizmendi (Inner Sunset).
-
-Real walking times via Google Routes API (computeRouteMatrix) when
+Real travel times via Google Routes API (computeRouteMatrix) when
 GOOGLE_MAPS_API_KEY is set; falls back to haversine × 1.3 ÷ 4.5 km/h
 when the key is missing or the call fails. Results cached in a dedicated
 local DB (~/.casita/routes_cache.sqlite, table `walk_cache`) keyed
@@ -39,53 +35,54 @@ class Anchor:
 
 
 BEACHES: list[Anchor] = [
-    Anchor("Baker Beach",   "Baker Beach",   37.7935, -122.4836, place_id="ChIJp_hAi_yGhYARGdXAfU1rPYs"),
-    Anchor("China Beach",   "China Beach",   37.7895, -122.4910, place_id="ChIJDSFWGgCHhYAR3kcTq2vIdVQ"),
-    Anchor("Ocean Beach",   "Ocean Beach",   37.7693, -122.5117, place_id="ChIJY8btaZSHhYAR_GctC494Hoo"),
-    Anchor("Muir Beach",    "Muir Beach",    37.8607, -122.5760, place_id="ChIJ7zeudX6FhYARq7-NVf7dhgk"),
-    Anchor("Stinson Beach", "Stinson Beach", 37.9006, -122.6446, place_id="ChIJLZ_NrZKThYARujlCxy63w78"),
+    Anchor("Ohio Street Beach", "Ohio St Beach", 41.8925, -87.6125),
+    Anchor("Oak Street Beach", "Oak St Beach", 41.9013, -87.6233),
+    Anchor("12th Street Beach", "12th St Beach", 41.8638, -87.6078),
 ]
 
 BAKERIES: list[Anchor] = [
-    # Curated via Places API. SF threshold: ≥4.7★ AND ≥1,500 reviews. Marin
-    # threshold: ≥4.5★ AND ≥100 reviews. Bakeries + cafes-with-pastries only.
-    # place_id values drive the maps deep-link to the actual place panel.
-    Anchor("Arsicault Bakery (Inner Richmond)",  "Arsicault",     37.7834, -122.4593, 4.8, 3148, "ChIJJ09d9DmHhYARkrToDt9JCy8"),
-    # Cinderella dropped — too close to Arsicault and a notch below.
-    Anchor("b. patisserie (Lower Pac Heights)",  "b. patisserie", 37.7878, -122.4408, 4.7, 2870, "ChIJ59WgYcmAhYARu5gLD0FVpw4"),
-    Anchor("Arizmendi Bakery (Inner Sunset)",    "Arizmendi",     37.7634, -122.4664, 4.7, 1972, "ChIJMdUfNVyHhYAR7pvCohDZC70"),
-    # Marin — bakeries with real pastries (croissants) or quality coffee shops
-    # that serve them. Bob's Donuts dropped — donuts, not croissants.
-    Anchor("Le Marais Bakery (Mill Valley)",     "Le Marais",     37.9039, -122.5419, 4.5,  325, "ChIJM1n1oviRhYARrY83h6TQtSc"),
-    Anchor("Madrona Bakery (Mill Valley)",       "Madrona",       37.9059, -122.5495, 4.7,  119, "ChIJt3Lx4LCRhYARWGAHgm0sQJU"),
-    Anchor("Equator Coffees (Mill Valley)",      "Equator MV",    37.8817, -122.5244, 4.6,  581, "ChIJ3Qt5gHKQhYAR1lasgUpcLIY"),
-    Anchor("Emporio Rulli (Larkspur)",           "Emporio Rulli", 37.9354, -122.5352, 4.6,  409, "ChIJ77I5OniahYAR5ZpjxedUINQ"),
+    Anchor("Do-Rite Donuts & Chicken (River North)", "Do-Rite", 41.8908, -87.6322),
+    Anchor("Lost Larson (West Loop)", "Lost Larson", 41.8846, -87.6474),
+    Anchor("Kasama (Ukrainian Village)", "Kasama", 41.9008, -87.6672),
+    Anchor("Goddess and the Baker (Loop)", "Goddess and the Baker", 41.8838, -87.6271),
 ]
 
-# Trail access — using named places (not street corners) so map links land on
-# something useful: park entrances and trailheads with reviews/photos.
-TRAILS: list[Anchor] = [
-    Anchor("Mountain Lake Park (Inner Richmond entry)", "Mountain Lake Park",
-           37.7873, -122.4697, place_id="ChIJqfCTeBiHhYARt_0t7D65SWU"),
-    Anchor("Inspiration Point (Presidio)",   "Inspiration Pt",
-           37.7922, -122.4584, place_id="ChIJweecq2aHhYARQBcuiGtSqNY"),
-    Anchor("Presidio Tunnel Tops",           "Tunnel Tops",
-           37.8029, -122.4563, place_id="ChIJXfbP6YmAhYARX1lrFe54-tY"),
-    Anchor("Lover's Lane (Presidio entry)",  "Lover's Lane",
-           37.7873, -122.4530, place_id="ChIJ0YqOXS2HhYARxXrmOhmY7-Y"),
-    Anchor("Dipsea Trailhead (Mill Valley)", "Dipsea Trailhead",
-           37.9050, -122.5481, place_id="ChIJcaTo5GuQhYAR2IyBgkDEPPM"),
-    Anchor("Tennessee Valley Trailhead",     "Tennessee Valley",
-           37.8666, -122.5364, place_id="ChIJgdjluGKFhYARdFab_W53d1I"),
+CTA_STATIONS: list[Anchor] = [
+    Anchor("Chicago Red Line", "Chicago Red", 41.8967, -87.6282),
+    Anchor("Grand Red Line", "Grand Red", 41.8917, -87.6280),
+    Anchor("Merchandise Mart", "Merchandise Mart", 41.8880, -87.6338),
+    Anchor("Clark/Lake", "Clark/Lake", 41.8857, -87.6309),
+    Anchor("Morgan", "Morgan", 41.8857, -87.6523),
+    Anchor("Clinton Blue Line", "Clinton Blue", 41.8755, -87.6409),
+    Anchor("Roosevelt", "Roosevelt", 41.8674, -87.6274),
 ]
-PRESIDIO_GATES = TRAILS
 
-# Downtown SF — for Marin listings this is the "how far am I from the city?"
-# lever. For SF listings, it's how close to downtown / ferry / BART.
-SF_CENTER: list[Anchor] = [
-    Anchor("Ferry Building (Embarcadero)", "Ferry Bldg",
-           37.7956, -122.3933, place_id="ChIJWTGPjmaAhYARxz6l1hOj92w"),
+ENTERTAINMENT: list[Anchor] = [
+    Anchor("Chicago Theatre", "Chicago Theatre", 41.8854, -87.6278),
+    Anchor("AMC River East 21", "AMC River East", 41.8917, -87.6176),
+    Anchor("CIBC Theatre", "CIBC Theatre", 41.8796, -87.6278),
 ]
+
+RESTAURANTS: list[Anchor] = [
+    Anchor("Time Out Market Chicago", "Time Out Market", 41.8840, -87.6487),
+    Anchor("Eataly Chicago", "Eataly", 41.8940, -87.6264),
+    Anchor("Girl & the Goat", "Girl & the Goat", 41.8846, -87.6476),
+]
+
+SHOPPING: list[Anchor] = [
+    Anchor("Block 37", "Block 37", 41.8837, -87.6280),
+    Anchor("900 North Michigan Shops", "900 North Michigan", 41.8997, -87.6234),
+]
+
+ACTIVITIES: list[Anchor] = [
+    Anchor("Chicago Riverwalk", "Riverwalk", 41.8880, -87.6295),
+    Anchor("Art Institute of Chicago", "Art Institute", 41.8796, -87.6237),
+    Anchor("Chicago Architecture Center", "Architecture Center", 41.8870, -87.6242),
+]
+
+ALL_ANCHORS = (
+    BEACHES + BAKERIES + CTA_STATIONS + ENTERTAINMENT + RESTAURANTS + SHOPPING + ACTIVITIES
+)
 
 _WALK_SPEED_KMH = 4.5
 _GRID_FACTOR = 1.30
@@ -264,80 +261,78 @@ def _call_routes_api(
 # ---------- public ----------
 
 
-def is_marin(L) -> bool:
-    """Mill Valley / Marin side of the bridge — north of 37.84."""
-    return L.lat is not None and L.lng is not None and L.lat > 37.84
-
-
-def populate_drive_for_marin(listings) -> dict[tuple[str, str], int]:
-    """For Marin listings, compute DRIVE time to every SF anchor (trails,
-    beaches, bakeries, SF center). Returns {(listing.key, anchor.name): minutes}.
-
-    Walking 25+ minutes to Baker Beach is nonsensical from Mill Valley — they'd
-    drive. This populates the matrix so the renderer can show drive-time rows.
-    """
-    marin = [L for L in listings if is_marin(L)]
-    if not marin:
-        return {}
-
-    anchors = BEACHES + BAKERIES + TRAILS + SF_CENTER
+def _populate_for_mode(listings, mode: str) -> dict[tuple[str, str], int]:
     result: dict[tuple[str, str], int] = {}
-    pending_origins: list[tuple[float, float]] = []
-    seen_origin: set[tuple[float, float]] = set()
-    for L in marin:
-        for a in anchors:
-            cached = _cache_get(L.lat, L.lng, a.lat, a.lng, mode="drive")
+    pending_pairs: list[tuple[str, str, float, float, float, float]] = []
+    for L in listings:
+        if L.lat is None or L.lng is None:
+            continue
+        for a in ALL_ANCHORS:
+            cached = _cache_get(L.lat, L.lng, a.lat, a.lng, mode=mode)
             if cached is not None:
                 result[(L.key, a.name)] = cached
-        key = (_rnd(L.lat), _rnd(L.lng))
-        if key not in seen_origin:
-            seen_origin.add(key)
-            # Only enqueue if anything is missing for this origin.
-            if any(_cache_get(L.lat, L.lng, a.lat, a.lng, mode="drive") is None for a in anchors):
-                pending_origins.append((L.lat, L.lng))
+            else:
+                pending_pairs.append((L.key, a.name, L.lat, L.lng, a.lat, a.lng))
 
-    if pending_origins:
-        destinations = [(a.lat, a.lng) for a in anchors]
-        label = "routes api (drive)" if _routes_api_enabled() else "routes fallback (drive)"
-        print(f"  {label}: {len(pending_origins)} origins × {len(destinations)} anchors")
-        for chunk_start in range(0, len(pending_origins), 25):
-            chunk = pending_origins[chunk_start:chunk_start + 25]
-            matrix = _call_routes_api(chunk, destinations, mode="drive")
-            for i, (fl, fn) in enumerate(chunk):
-                for j, (tl, tn) in enumerate(destinations):
-                    mins = matrix[i][j]
-                    if mins is None:
-                        mins = _haversine_drive_minutes(fl, fn, anchors[j])
-                        _cache_put(fl, fn, tl, tn, mins, "haversine", mode="drive")
-                        continue
-                    _cache_put(fl, fn, tl, tn, mins, "api", mode="drive")
+    if not pending_pairs:
+        return result
 
-    # Re-read into result.
-    for L in marin:
-        for a in anchors:
-            m = _cache_get(L.lat, L.lng, a.lat, a.lng, mode="drive")
-            if m is not None:
-                result[(L.key, a.name)] = m
+    unique_origins: list[tuple[float, float]] = []
+    seen: set[tuple[float, float]] = set()
+    for _, _, fl, fn, _, _ in pending_pairs:
+        key = (_rnd(fl), _rnd(fn))
+        if key not in seen:
+            seen.add(key)
+            unique_origins.append((fl, fn))
+
+    destinations = [(a.lat, a.lng) for a in ALL_ANCHORS]
+    label = f"routes api ({mode})" if _routes_api_enabled() else f"routes fallback ({mode})"
+    print(f"  {label}: {len(unique_origins)} origins × {len(destinations)} anchors")
+    for chunk_start in range(0, len(unique_origins), 25):
+        chunk = unique_origins[chunk_start:chunk_start + 25]
+        matrix = _call_routes_api(chunk, destinations, mode=mode)
+        for i, (fl, fn) in enumerate(chunk):
+            for j, (tl, tn) in enumerate(destinations):
+                mins = matrix[i][j]
+                if mins is None:
+                    fallback = (
+                        _haversine_drive_minutes(fl, fn, ALL_ANCHORS[j])
+                        if mode == "drive"
+                        else _haversine_minutes(fl, fn, ALL_ANCHORS[j])
+                    )
+                    _cache_put(fl, fn, tl, tn, fallback, "haversine", mode=mode)
+                else:
+                    _cache_put(fl, fn, tl, tn, mins, "api", mode=mode)
+
+    for listing_key, anchor_name, fl, fn, tl, tn in pending_pairs:
+        minutes = _cache_get(fl, fn, tl, tn, mode=mode)
+        if minutes is not None:
+            result[(listing_key, anchor_name)] = minutes
     return result
 
 
+def populate_drive_for_chicago(listings) -> dict[tuple[str, str], int]:
+    """Return driving minutes from each geocoded Chicago listing to all anchors."""
+    return _populate_for_mode(listings, "drive")
+
+
+def populate_drive_for_marin(listings) -> dict[tuple[str, str], int]:
+    """Compatibility wrapper for older callers; all supported listings are now Chicago."""
+    return populate_drive_for_chicago(listings)
+
+
 def populate_drive_for_bakeries(listings):
-    """Kept for backwards compatibility — calls populate_drive_for_marin and
-    returns the nearest-bakery summary. New callers should use
-    populate_drive_for_marin directly so they get all anchors.
-    """
-    drive_map = populate_drive_for_marin(listings)
+    """Return the nearest bakery by driving from each Chicago listing."""
+    drive_map = populate_drive_for_chicago(listings)
     out: dict[str, tuple[Anchor, int]] = {}
     for L in listings:
-        if not is_marin(L):
+        if L.lat is None or L.lng is None:
             continue
         best: tuple[Anchor, int] | None = None
         for a in BAKERIES:
-            m = drive_map.get((L.key, a.name))
-            if m is None:
-                continue
-            if best is None or m < best[1]:
-                best = (a, m)
+            minutes = drive_map.get((L.key, a.name))
+            if minutes is not None and (best is None or minutes < best[1]):
+                best = (a, minutes)
         if best:
             out[L.key] = best
     return out
@@ -348,57 +343,7 @@ def populate_for(listings) -> dict[tuple[str, str], int]:
 
     Returns a dict keyed by (listing.key, anchor.name) → minutes.
     """
-    anchors = BEACHES + BAKERIES + PRESIDIO_GATES
-    result: dict[tuple[str, str], int] = {}
-    pending_origins: list[tuple[float, float]] = []
-    pending_pairs: list[tuple[str, str, float, float, float, float]] = []
-    # ↑ (listing_key, anchor_name, fl, fn, tl, tn)
-
-    for L in listings:
-        if L.lat is None or L.lng is None:
-            continue
-        for a in anchors:
-            cached = _cache_get(L.lat, L.lng, a.lat, a.lng)
-            if cached is not None:
-                result[(L.key, a.name)] = cached
-            else:
-                pending_pairs.append((L.key, a.name, L.lat, L.lng, a.lat, a.lng))
-
-    if not pending_pairs:
-        return result
-
-    # Batch by unique origin. Routes API allows up to 25 origins × 25 destinations per call,
-    # and elements ≤ 625. Our destination set is fixed at 5, so we can batch 25 origins at once.
-    unique_origins: list[tuple[float, float]] = []
-    seen = set()
-    for _, _, fl, fn, _, _ in pending_pairs:
-        key = (_rnd(fl), _rnd(fn))
-        if key not in seen:
-            seen.add(key)
-            unique_origins.append((fl, fn))
-
-    destinations = [(a.lat, a.lng) for a in anchors]
-    label = "routes api" if _routes_api_enabled() else "routes fallback"
-    print(f"  {label}: {len(unique_origins)} origins × {len(destinations)} anchors")
-    for chunk_start in range(0, len(unique_origins), 25):
-        chunk = unique_origins[chunk_start:chunk_start + 25]
-        matrix = _call_routes_api(chunk, destinations)
-        for i, (fl, fn) in enumerate(chunk):
-            for j, (tl, tn) in enumerate(destinations):
-                mins = matrix[i][j]
-                if mins is None:
-                    # Fall back to haversine for this pair.
-                    mins = _haversine_minutes(fl, fn, anchors[j])
-                    _cache_put(fl, fn, tl, tn, mins, "haversine")
-                else:
-                    _cache_put(fl, fn, tl, tn, mins, "api")
-
-    # Re-lookup to fill `result` for the now-cached pairs.
-    for lk, an, fl, fn, tl, tn in pending_pairs:
-        m = _cache_get(fl, fn, tl, tn)
-        if m is not None:
-            result[(lk, an)] = m
-    return result
+    return _populate_for_mode(listings, "walk")
 
 
 def minutes_to(walk_map: dict[tuple[str, str], int], listing_key: str, anchor: Anchor) -> int | None:

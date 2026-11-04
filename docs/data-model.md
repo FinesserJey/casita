@@ -20,6 +20,10 @@ Key tables:
 | `llm_photo_reviews` | Cached Gemini photo review |
 | `walk_cache` | Cached walking/driving minutes by rounded coordinates |
 
+Listing facts include covered parking, in-unit laundry, air conditioning, and
+den availability where a source provides them. Missing facts remain unknown
+for verification rather than being treated as a confirmed match.
+
 The committed demo fixture is `fixtures/demo.sqlite`. It keeps enriched listing
 facts, photo reviews, and cached route rows. It removes private conversations,
 attachments, pending URLs, contact fields, and the chosen home.

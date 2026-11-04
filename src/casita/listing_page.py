@@ -25,7 +25,7 @@ from . import dogs
 from .html import (
     CAROUSEL_JS,
     CSS,
-    PACIFIC,
+    CENTRAL,
     SHARE_JS,
     THEME_PREPAINT,
     THEME_SWITCH_HTML,
@@ -60,7 +60,16 @@ def _scrub(s: str | None) -> str | None:
         s = pat.sub("[redacted]", s)
     return s
 from .models import Listing
-from .walk import BAKERIES, BEACHES, PRESIDIO_GATES, TRAILS, minutes_to, nearest
+from .walk import (
+    ACTIVITIES,
+    BAKERIES,
+    BEACHES,
+    CTA_STATIONS,
+    ENTERTAINMENT,
+    RESTAURANTS,
+    SHOPPING,
+    nearest,
+)
 
 ROOT = Path(__file__).parent.parent.parent
 
@@ -73,7 +82,7 @@ def _slug(L: Listing) -> str:
     name (zillow/craigslist) is omitted — the reader doesn't care which
     site it came from.
     """
-    hood = (L.hood or "sf").lower()
+    hood = (L.hood or "chicago").lower()
     hood = re.sub(r"[^a-z0-9-]+", "-", hood).strip("-") or "sf"
     sid = re.sub(r"[^a-zA-Z0-9-]+", "-", L.source_id).strip("-").lower()
     parts = [hood, sid]
@@ -266,9 +275,36 @@ def _render_kv(L: Listing, walk_map, drive_map, drive_bakery) -> str:
     if L.parking:
         parking_warn = (L.parking or "").lower() in {"no parking", "none"}
         rows.append(row("parking", _esc(_scrub(L.parking)), "v warn" if parking_warn else "v"))
+    covered_text = (
+        "Yes" if L.covered_parking is True else
+        "No" if L.covered_parking is False else
+        "Unverified"
+    )
+    rows.append(row(
+        "covered parking", covered_text,
+        "v" if L.covered_parking is True else
+        "v warn" if L.covered_parking is False else "v caution",
+    ))
     if L.laundry:
         laundry_warn = (L.laundry or "").lower() in {"none", "no laundry", "hookups only"}
-        rows.append(row("laundry", _esc(_scrub(L.laundry)), "v warn" if laundry_warn else "v"))
+        rows.append(row(
+            "laundry", _esc(_scrub(L.laundry)),
+            "v warn" if laundry_warn or "in-unit" not in L.laundry.lower() else "v",
+        ))
+    else:
+        rows.append(row("laundry", "Unverified", "v caution"))
+    ac_text = (
+        "Yes" if L.air_conditioning is True else
+        "No" if L.air_conditioning is False else
+        "Unverified"
+    )
+    rows.append(row(
+        "air conditioning", ac_text,
+        "v" if L.air_conditioning is True else
+        "v warn" if L.air_conditioning is False else "v caution",
+    ))
+    if L.has_den is not None:
+        rows.append(row("den / office", "Yes" if L.has_den else "No"))
     if L.has_yard:
         rows.append(row("yard", _esc(_scrub(L.yard_note or "yes")), "v"))
     elif L.has_yard is False:
@@ -278,57 +314,44 @@ def _render_kv(L: Listing, walk_map, drive_map, drive_bakery) -> str:
     if L.other_visible:
         rows.append(row("features", _esc(_scrub(L.other_visible)), "v"))
 
-    # Walk / drive times — same logic as the card.
-    is_marin = L.lat is not None and L.lat > 37.84
     # Plain word suffixes — clearer than emoji and don't shift baseline.
-    WALK = ""
-    DRIVE = ""
     WALK_SUFFIX = ' <span class="mode-word">walk</span>'
     DRIVE_SUFFIX = ' <span class="mode-word">drive</span>'
 
     # Listing origin for Directions URL — None when we lack coords.
     origin = (L.lat, L.lng) if (L.lat is not None and L.lng is not None) else None
 
-    if is_marin and drive_map:
-        from .walk import SF_CENTER as _SFC
-        def _best(anchors):
-            best = None
-            for a in anchors:
-                m = drive_map.get((L.key, a.name))
-                if m is None: continue
-                if best is None or m < best[1]: best = (a, m)
-            return best
-        for label, anchors in [("trail", TRAILS), ("beach", BEACHES), ("bakery", BAKERIES)]:
-            b = _best(anchors)
-            if b:
-                a, m = b
-                link = _anchor_link_html(a, origin=origin, mode="driving")
-                rows.append(row(label, f'{m} min{DRIVE_SUFFIX} · {link}'))
-        sf = drive_map.get((L.key, _SFC[0].name))
-        if sf is not None:
-            link = _anchor_link_html(_SFC[0], origin=origin, mode="driving")
-            rows.append(row("to sf", f'{sf} min{DRIVE_SUFFIX} · {link}'))
-    elif walk_map is not None:
-        np = nearest(walk_map, L.key, TRAILS)
-        if np:
-            a, m = np
-            link = _anchor_link_html(a, origin=origin, mode="walking")
-            rows.append(row("trail", f'{m} min{WALK_SUFFIX} · {link}', _walk_class(m)))
-        nb = nearest(walk_map, L.key, BEACHES)
-        if nb:
-            a, m = nb
-            link = _anchor_link_html(a, origin=origin, mode="walking")
-            rows.append(row("beach", f'{m} min{WALK_SUFFIX} · {link}', _walk_class(m)))
-        nba = nearest(walk_map, L.key, BAKERIES)
-        if nba:
-            a, m = nba
-            if m > 45 and drive_bakery:
-                d_a, d_m = drive_bakery
-                link = _anchor_link_html(d_a, origin=origin, mode="driving")
-                rows.append(row("bakery", f'{d_m} min{DRIVE_SUFFIX} · {link}'))
-            else:
-                link = _anchor_link_html(a, origin=origin, mode="walking")
-                rows.append(row("bakery", f'{m} min{WALK_SUFFIX} · {link}', _walk_class(m)))
+    if walk_map is not None:
+        for label, anchors in (
+            ("CTA station", CTA_STATIONS),
+            ("beach", BEACHES),
+            ("bakery", BAKERIES),
+            ("entertainment", ENTERTAINMENT),
+            ("restaurant", RESTAURANTS),
+            ("shopping", SHOPPING),
+            ("activity", ACTIVITIES),
+        ):
+            walking = nearest(walk_map, L.key, anchors)
+            if not walking:
+                continue
+            anchor, minutes = walking
+            mode = "walking"
+            suffix = WALK_SUFFIX
+            if minutes > 20 and drive_map:
+                driving = min(
+                    (
+                        (a, drive_map[(L.key, a.name)])
+                        for a in anchors
+                        if (L.key, a.name) in drive_map
+                    ),
+                    key=lambda item: item[1],
+                    default=None,
+                )
+                if driving and driving[1] < minutes:
+                    anchor, minutes = driving
+                    mode, suffix = "driving", DRIVE_SUFFIX
+            link = _anchor_link_html(anchor, origin=origin, mode=mode)
+            rows.append(row(label, f'{minutes} min{suffix} · {link}', _walk_class(minutes)))
 
     if L.contact_name or L.contact_phone or L.contact_email:
         bits = []
@@ -352,7 +375,7 @@ def _render_kv(L: Listing, walk_map, drive_map, drive_bakery) -> str:
     # Map row — address link, place_id-free since we don't have one for arbitrary addresses.
     cleaned = _clean_address_for_maps(L.address or "")
     if cleaned:
-        q = cleaned if "san francisco" in cleaned.lower() or "mill valley" in cleaned.lower() else f"{cleaned}, San Francisco, CA"
+        q = cleaned if "chicago" in cleaned.lower() else f"{cleaned}, Chicago, IL"
         rows.append(row("map", f'<a href="https://www.google.com/maps/search/?api=1&query={quote_plus(q)}" target="_blank" rel="noopener">{_esc(_scrub(cleaned))} <span class="material-symbols-outlined link-icon">arrow_outward</span></a>'))
 
     return f'<div class="detail-kv">{"".join(rows)}</div>'
@@ -372,7 +395,7 @@ def _render_thread(conn: sqlite3.Connection, listing_key: str) -> str:
         sender = r[1] or ("Landlord" if d == "in" else "You" if d == "out" else "Note")
         body = r[2] or ""
         try:
-            dt = datetime.fromisoformat(str(r[3])).replace(tzinfo=timezone.utc).astimezone(PACIFIC)
+            dt = datetime.fromisoformat(str(r[3])).replace(tzinfo=timezone.utc).astimezone(CENTRAL)
             when = dt.strftime("%b %-d · %-I:%M %p")
         except Exception:
             when = str(r[3])

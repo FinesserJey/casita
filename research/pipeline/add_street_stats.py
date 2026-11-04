@@ -5,7 +5,7 @@ import atomicjson
 M_LAT = 110540.0
 def m_lon(lat): return 111320.0 * math.cos(math.radians(lat))
 
-EXPECT = {"encampment", "cleaning", "break_in", "violent"}
+EXPECT = {"graffiti", "vehicle_theft", "violent"}
 
 con = sqlite3.connect("city.sqlite")
 pts = collections.defaultdict(list)
@@ -60,7 +60,7 @@ for a in apts:
     if key not in cache:
         cache[key] = {k: near(k, a["lat"], a["lon"], 250) for k in pts}
     a["street"] = cache[key]
-# a raw count means nothing without knowing what is normal for SF
+# a raw count means nothing without knowing what is normal for this search area
 import bisect
 ranked = {k: sorted(a["street"][k] for a in apts) for k in pts}
 for a in apts:
@@ -76,8 +76,9 @@ for k in pts:
     print(f"  {k:<12} median {vals[n//2]:>5}   p90 {vals[int(n*0.9)]:>5}   max {vals[-1]:>5}"
           f"   (within 250m)")
 
-# citywide grid for the heatmap layers, ~90m cells
-GC = 0.0011
+# CPD locations are block-level estimates. Keep map cells coarse (roughly
+# 250m) so the visualization does not imply a specific address.
+GC = 0.003
 grid_out = {}
 for k, v in pts.items():
     c = collections.Counter()

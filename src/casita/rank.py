@@ -3,12 +3,11 @@
 Heuristic baseline. Higher score = better.
 
 Inputs are weighted in line with stated priorities, in priority order:
-  - Dogs OK (large or any-size) — gate; no-dogs heavily penalized
-  - Walk-to-Presidio (trail access) — primary
-  - Walk-to-beach — secondary
-  - 3 bedrooms preferred, ≥ 1.5 baths preferred
-  - In-unit laundry > shared > hookups
-  - Garage parking > street > none
+  - Walk-to-CTA stations — primary
+  - Covered parking, in-unit laundry, and air conditioning — strong requirements
+  - 1 bedroom preferred; a 1-bedroom with den or smaller 2-bedroom is suitable
+  - Walk-to-Lake-Michigan beaches — secondary
+  - Preferred downtown Chicago neighborhoods and bath count — bonuses
 
 Walking times come from the `walk_map` populated by walk.populate_for().
 When None, score is computed without those terms.
@@ -17,18 +16,14 @@ from .models import Listing
 
 
 def _hood_fallback_bonus(listing: Listing) -> int:
-    """Small extra credit for target SF neighborhoods."""
+    """Small extra credit for the target downtown Chicago neighborhoods."""
     hood = (listing.hood or "").lower()
-    if any(h in hood for h in ["inner richmond", "lake street", "presidio heights"]):
+    if "river north" in hood or "fulton market" in hood:
         return 6
-    if "inner sunset" in hood:
+    if "west loop" in hood:
         return 5
-    if "presidio" in hood:
+    if "south loop" in hood:
         return 4
-    if any(h in hood for h in ["central richmond", "central sunset", "outer richmond"]):
-        return 2
-    if "outer sunset" in hood or "parkside" in hood:
-        return 1
     return 0
 
 
@@ -50,48 +45,58 @@ def _walk_bonus(minutes: int | None, *, sweet_spot: int) -> int:
 def score(listing: Listing, walk_map: dict | None = None) -> int:
     s = 0
 
-    # Dog policy — gate.
-    if listing.dog_policy == "no_dogs" or listing.pets_allowed is False:
-        return -1000
-    if listing.dog_policy == "small_only":
-        s -= 30  # not a hard gate, but large dogs need negotiation.
-    if listing.dog_policy == "large_ok":
-        s += 12
-    elif listing.dog_policy == "dogs_ok":
-        s += 6
-
-    # Walk times — Presidio is primary.
+    # Transit is the primary location criterion; beaches are a nice-to-have.
     if walk_map is not None:
-        # Use minimum of presidio gates / beaches as the listing's value.
-        from .walk import BEACHES, PRESIDIO_GATES, nearest
-        np = nearest(walk_map, listing.key, PRESIDIO_GATES)
+        from .walk import BEACHES, CTA_STATIONS, nearest
+        nt = nearest(walk_map, listing.key, CTA_STATIONS)
         nb = nearest(walk_map, listing.key, BEACHES)
-        if np:
-            s += _walk_bonus(np[1], sweet_spot=10) * 2  # weighted ×2 — stated priority
+        if nt:
+            s += _walk_bonus(nt[1], sweet_spot=8) * 2
         if nb:
-            s += _walk_bonus(nb[1], sweet_spot=10)
+            s += _walk_bonus(nb[1], sweet_spot=12)
 
     s += _hood_fallback_bonus(listing)
 
-    # Size / config.
-    if listing.beds and listing.beds >= 3:
+    # One bedroom is preferred; a den is extra useful, and two bedrooms remain
+    # acceptable. Studios and larger layouts are poor fits for the desk need.
+    if listing.beds == 1:
+        s += 8
+    elif listing.beds == 2:
+        s += 5
+    elif listing.beds == 0:
+        s -= 20
+    elif listing.beds is not None and listing.beds > 2:
+        s -= 20
+    if listing.has_den:
         s += 4
     if listing.baths and listing.baths >= 1.5:
         s += 5
+    elif listing.baths and listing.baths >= 1:
+        s += 2
 
-    # Laundry.
+    # Missing must-have facts stay visible for verification; known negatives
+    # rank well below confirmed matches.
     if listing.laundry == "in-unit":
-        s += 3
-    elif listing.laundry == "shared (in building)":
-        s += 1
-    elif listing.laundry in ("hookups only", "none"):
-        s -= 2
+        s += 16
+    elif listing.laundry:
+        s -= 25
+    if listing.air_conditioning is True:
+        s += 12
+    elif listing.air_conditioning is False:
+        s -= 30
+    covered = listing.covered_parking
+    parking = (listing.parking or "").lower()
+    if covered is None:
+        if any(term in parking for term in ("garage", "covered", "carport")):
+            covered = True
+        elif any(term in parking for term in ("street", "no parking", "none", "uncovered")):
+            covered = False
+    if covered is True:
+        s += 18
+    elif covered is False:
+        s -= 30
 
-    # Parking.
-    if listing.parking and "no parking" not in (listing.parking or "").lower() and listing.parking != "none":
-        s += 2
-    if listing.parking and ("garage" in listing.parking.lower()):
-        s += 2
+    # Preserve small legacy amenity signals after the strong requirements.
 
     return s
 

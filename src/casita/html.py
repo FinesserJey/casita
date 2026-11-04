@@ -9,10 +9,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
-from . import dogs
 from .models import Listing
-from .rank import score
-from .walk import BAKERIES, BEACHES, PRESIDIO_GATES, TRAILS, minutes_to, nearest
 
 
 def site_url() -> str:
@@ -45,7 +42,7 @@ def _clean_address_for_maps(addr: str) -> str | None:
         return primary
     return f"{primary} & {cross}"
 
-PACIFIC = ZoneInfo("America/Los_Angeles")
+CENTRAL = ZoneInfo("America/Chicago")
 
 
 # Set the data-theme attribute BEFORE any styles paint, to avoid a flash of
@@ -501,6 +498,12 @@ h1 {
 }
 .lede em { font-style: italic; color: var(--ink); }
 @media (max-width: 600px) { .lede { font-size: 16.5px; margin-top: 12px; } }
+.demo-notice {
+  max-width: 760px; margin: 16px 0 0; padding: 12px 14px;
+  border: 1px solid var(--line-2); border-radius: 10px;
+  background: var(--caution-soft); color: var(--ink);
+  font-size: 14px; line-height: 1.45;
+}
 
 /* editorial stat strip */
 .stats {
@@ -639,6 +642,31 @@ h1 {
   display: grid;
   gap: 30px 26px;
   grid-template-columns: 1fr;
+}
+.rent-map {
+  margin: 28px 0 34px;
+  padding: 20px 22px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.rent-map h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.rent-map p { margin: 5px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+.rent-map-body { display: flex; align-items: center; gap: 24px; margin-top: 12px; }
+.rent-map-svg { width: min(100%, 320px); flex: 0 0 320px; }
+.rent-map-price { fill: #fff; font-size: 9px; font-weight: 700; }
+.rent-map-label { fill: var(--ink); font-size: 9px; font-weight: 600; }
+.rent-map-water { fill: #52717a; font-size: 8px; letter-spacing: .15em; }
+.rent-map-legend { list-style: none; padding: 0; margin: 0; flex: 1; }
+.rent-map-legend li { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rent-map-legend strong { font-size: 13px; }
+.rent-map-legend small { grid-column: 1 / -1; color: var(--ink-3); font-size: 11px; }
+.rent-map-note { margin-top: 10px !important; font-size: 10px !important; }
+@media (max-width: 600px) {
+  .rent-map { padding: 16px; }
+  .rent-map-body { flex-direction: column; align-items: stretch; gap: 8px; }
+  .rent-map-svg { width: 100%; flex-basis: auto; }
 }
 @media (min-width: 640px) {
   .grid { grid-template-columns: repeat(2, 1fr); gap: 32px 24px; }
@@ -1280,7 +1308,7 @@ def _anchor_link_html(anchor, *, origin: tuple[float, float] | None = None,
             f"&query_place_id={anchor.place_id}"
         )
     else:
-        query = quote_plus(f"{name_q}, San Francisco Bay Area")
+        query = quote_plus(f"{name_q}, Chicago, IL")
         url = (
             f"https://www.google.com/maps/search/?api=1&query={query}"
             f"&center={anchor.lat},{anchor.lng}"
@@ -1328,18 +1356,107 @@ FIT_LABELS = {"ok": "Strong fit", "concerns": "Worth a look", "filtered": "Long 
 
 
 def _amenity_chips(L: Listing) -> list[str]:
-    """A few scannable amenity tags drawn straight from our priorities:
-    private outdoor for the dogs, in-unit laundry, off-street parking."""
+    """Show the Chicago must-haves and clearly flag missing information."""
     chips: list[str] = []
-    if L.has_yard:
-        chips.append("Yard")
-    laundry = (L.laundry or "").lower()
-    if any(w in laundry for w in ("in-unit", "in unit", "in_unit", "washer")):
+    if L.covered_parking is True:
+        chips.append("Covered parking")
+    elif L.covered_parking is False:
+        chips.append("No covered parking")
+    else:
+        chips.append("Verify parking")
+    if L.laundry and "in-unit" in L.laundry.lower():
         chips.append("In-unit laundry")
-    parking = (L.parking or "").lower()
-    if any(w in parking for w in ("garage", "attached", "carport", "deeded", "covered")):
-        chips.append("Garage")
-    return chips[:3]
+    elif L.laundry:
+        chips.append(f"Not in-unit: {L.laundry}")
+    else:
+        chips.append("Verify laundry")
+    if L.air_conditioning is True:
+        chips.append("AC")
+    elif L.air_conditioning is False:
+        chips.append("No AC")
+    else:
+        chips.append("Verify AC")
+    if L.has_den is True:
+        chips.append("Den")
+    return chips[:4]
+
+
+_RENT_MAP_POINTS = {
+    "River North": (185, 48),
+    "Fulton Market": (95, 88),
+    "West Loop": (62, 104),
+    "South Loop": (170, 165),
+}
+
+
+def _rent_map_html(listings: list[Listing]) -> str:
+    totals: dict[str, list[int]] = {name: [] for name in _RENT_MAP_POINTS}
+    for listing in listings:
+        hood = (listing.hood or "").lower().replace("-", " ")
+        for name in totals:
+            if name.lower() == hood and listing.price:
+                totals[name].append(listing.price)
+                break
+
+    averages = {
+        name: (round(sum(prices) / len(prices)), len(prices))
+        for name, prices in totals.items()
+        if prices
+    }
+    if not averages:
+        return ""
+
+    low = min(price for price, _ in averages.values())
+    high = max(price for price, _ in averages.values())
+
+    def color(price: int) -> str:
+        if high == low:
+            return "#527d5f"
+        fraction = (price - low) / (high - low)
+        red = round(224 - 125 * fraction)
+        green = round(237 - 95 * fraction)
+        blue = round(220 - 130 * fraction)
+        return f"#{red:02x}{green:02x}{blue:02x}"
+
+    markers = []
+    rows = []
+    for name, (x, y) in _RENT_MAP_POINTS.items():
+        if name not in averages:
+            continue
+        average, count = averages[name]
+        fill = color(average)
+        markers.append(
+            f'<g aria-label="{_esc(name)} average rent ${average:,} from {count} listings">'
+            f'<circle cx="{x}" cy="{y}" r="19" fill="{fill}" stroke="#294b37" stroke-width="2"/>'
+            f'<text x="{x}" y="{y + 4}" text-anchor="middle" class="rent-map-price">'
+            f'${average / 1000:.1f}k</text><text x="{x}" y="{y + 34}" text-anchor="middle" '
+            f'class="rent-map-label">{_esc(name)}</text></g>'
+        )
+        rows.append(
+            f'<li><span>{_esc(name)}</span><strong>${average:,}/mo</strong>'
+            f'<small>{count} listing{"s" if count != 1 else ""}</small></li>'
+        )
+
+    return f"""
+<section class="rent-map" aria-labelledby="rent-map-title">
+  <div class="rent-map-head">
+    <div><h2 id="rent-map-title">Average asking rent by neighborhood</h2>
+    <p>Mean monthly rent from listings currently in this search. Marker locations are approximate.</p></div>
+  </div>
+  <div class="rent-map-body">
+    <svg class="rent-map-svg" viewBox="0 0 300 230" role="img"
+         aria-label="Chicago neighborhood map showing average asking rents">
+      <path d="M253 0h47v230h-47c12-42 12-75 0-115 12-40 12-73 0-115Z" fill="#dcecf0"/>
+      <text x="279" y="115" text-anchor="middle" transform="rotate(90 279 115)"
+            class="rent-map-water">LAKE MICHIGAN</text>
+      <path d="M30 12 236 12 248 211 40 218Z" fill="none" stroke="#c9c7bc"
+            stroke-width="2" stroke-dasharray="4 5"/>
+      {"".join(markers)}
+    </svg>
+    <ul class="rent-map-legend">{"".join(rows)}</ul>
+  </div>
+  <p class="rent-map-note">Asking rents are a snapshot, not a market-wide estimate; each average includes the listing count shown.</p>
+</section>"""
 
 
 # What the main-page search box scans, in the order the fields are joined.
@@ -1405,12 +1522,6 @@ def _card(L: Listing, convo: dict | None = None, feature: bool = False) -> str:
     added_date = L.first_seen.date().isoformat() if L.first_seen else ""
 
     badge = f'<span class="badge">{_esc(L.source)}</span>'
-    dog_label = dogs.LABELS.get(L.dog_policy) if L.dog_policy else None
-    dog_badge = (
-        f'<span class="dog-badge dog-badge-{_esc(L.dog_policy)}">{_esc(dog_label)}</span>'
-        if dog_label else ""
-    )
-
     photos = L.photos or ([L.image_url] if L.image_url else [])
     photos = [p for p in photos if p]
     if len(photos) > 1:
@@ -1430,18 +1541,18 @@ def _card(L: Listing, convo: dict | None = None, feature: bool = False) -> str:
             f'<div class="carousel">'
             f'<div class="carousel-track">{slides}</div>'
             f'<div class="carousel-dots">{dots}</div>'
-            f'{badge}{dog_badge}</div>'
+            f'{badge}</div>'
         )
     elif photos:
         img_html = (
             f'<a class="img-wrap" href="{detail_href}">'
             f'<img src="{_esc(photos[0])}" alt="" loading="lazy">'
-            f'{badge}{dog_badge}</a>'
+            f'{badge}</a>'
         )
     else:
         img_html = (
             f'<a class="img-wrap" href="{detail_href}">'
-            f'<div class="no-img">no photo</div>{badge}{dog_badge}</a>'
+            f'<div class="no-img">no photo</div>{badge}</a>'
         )
 
     price = f"${L.price:,}/mo" if L.price else "price on request"
@@ -1547,6 +1658,7 @@ def render(
     listings: list[Listing], run=None,
     convo_map: dict[str, dict] | None = None,
     title: str = "Casita",
+    data_notice: str | None = None,
 ) -> str:
     """The index page.
 
@@ -1575,7 +1687,7 @@ def render(
     ts_raw = (run["finished_at"] or run["started_at"]) if run else datetime.utcnow().isoformat()
     try:
         dt = datetime.fromisoformat(str(ts_raw)).replace(tzinfo=timezone.utc)
-        ts = dt.astimezone(PACIFIC).strftime("%b %-d, %Y · %-I:%M %p %Z")
+        ts = dt.astimezone(CENTRAL).strftime("%b %-d, %Y · %-I:%M %p %Z")
     except Exception:
         ts = str(ts_raw)
 
@@ -1607,8 +1719,12 @@ def render(
     if viewings:
         stat_parts.append(stat_item(viewings, "viewing" + ("s" if viewings != 1 else "")))
     stats_html = '<div class="stats">' + '<span class="stat-sep"></span>'.join(stat_parts) + '</div>'
+    notice_html = (
+        f'<p class="demo-notice">{_esc(data_notice)}</p>'
+        if data_notice else ""
+    )
 
-    sub = f"{count} places · ranked for large dogs, trails, beaches, and a good loaf"
+    sub = f"{count} Chicago rental listings · CTA access, covered parking, in-unit laundry, and AC"
     og_image = public_url("/og/index.png")
     og_url = public_url("/")
     return f"""<!doctype html>
@@ -1646,19 +1762,20 @@ def render(
   <div class="brandline">
     <div class="wordmark">
       <h1>{title}</h1>
-      <span class="tagline">rental search demo</span>
+      <span class="tagline">Chicago rental search</span>
     </div>
     <div class="header-actions">
       <button id="export-votes" class="export-btn" type="button" title="share all up/pass votes as a link — paste to Claude to incorporate"><span class="material-symbols-outlined">ios_share</span><span class="export-btn-label">export votes</span></button>
       {THEME_SWITCH_HTML}
     </div>
   </div>
-  <p class="lede">A rental-search snapshot for a household with two large dogs: SF walkability, Marin drive times, trail access, and good bread nearby.</p>
+  <p class="lede">A downtown Chicago rental snapshot: CTA walks, Lake Michigan beaches, neighborhood amenities, and the features that matter most.</p>
+  {notice_html}
   {stats_html}
   <div class="toolbar">
     <div class="search-box">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="q" type="search" placeholder="Search hood, price, beds, “garage”, “Inner Richmond”…" autocomplete="off">
+      <input id="q" type="search" placeholder="Search neighborhood, price, beds, “covered parking”, “AC”…" autocomplete="off">
     </div>
     <div class="since-filter" role="group" aria-label="Filter by date added">
       <span class="since-label">Added</span>
@@ -1671,10 +1788,11 @@ def render(
     <div class="search-meta"><span id="search-count">{count}</span> of {count} shown · refreshed {ts}</div>
   </div>
 </header>
+{_rent_map_html(listings)}
 <main class="grid">
 {cards}
 </main>
-<footer><span class="footer-mark">Casita</span> · personal-use rental search</footer>
+<footer><span class="footer-mark">Casita</span> · Chicago personal-use rental search</footer>
 </div>
 {CAROUSEL_JS}
 {SEARCH_JS}

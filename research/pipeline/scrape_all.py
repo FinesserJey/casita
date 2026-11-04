@@ -1,14 +1,24 @@
-"""Full SF listing sweep across platforms."""
-import json, time, urllib.parse, urllib.request
+"""Full downtown Chicago listing sweep across platforms."""
+import json, os, pathlib, time, urllib.parse, urllib.request
 
-TOK = [l.split("=", 1)[1].strip() for l in
-       open("/Users/icerven/Documents/apt-hunt/.env") if l.startswith("APIFY_API_TOKEN=")][0]
+HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+TOK = os.environ.get("APIFY_API_TOKEN")
+if not TOK:
+    env_file = ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("APIFY_API_TOKEN="):
+                TOK = line.split("=", 1)[1].strip().strip("'\"")
+                break
+if not TOK:
+    raise SystemExit("Set APIFY_API_TOKEN in the environment or repository-root .env")
 Q = urllib.parse.quote(TOK)
 
 SQS = {
   "pagination": {},
-  "usersSearchTerm": "San Francisco, CA",
-  "mapBounds": {"west": -122.5170, "east": -122.3560, "south": 37.7040, "north": 37.8340},
+  "usersSearchTerm": "Chicago, IL",
+  "mapBounds": {"west": -87.68, "east": -87.58, "south": 41.84, "north": 41.92},
   "isMapVisible": True,
   "filterState": {
      "fore": {"value": False}, "auc": {"value": False}, "nc": {"value": False},
@@ -16,12 +26,12 @@ SQS = {
      "fr": {"value": True}},
   "isListVisible": True,
 }
-ZURL = ("https://www.zillow.com/san-francisco-ca/rentals/?searchQueryState="
+ZURL = ("https://www.zillow.com/chicago-il/rentals/?searchQueryState="
         + urllib.parse.quote(json.dumps(SQS, separators=(",", ":"))))
 
 JOBS = [
   ("apartments", "epctex~apartments-scraper-api", {
-      "search": "San Francisco, CA", "maxItems": 3000,
+      "search": "Chicago, IL", "maxItems": 3000,
       "includeReviews": False, "includeVisuals": True,
       "includeInteriorAmenities": True}),
 
@@ -81,8 +91,8 @@ try:
     zs, zr = set(), []
     zillow_api.harvest(0, 30000, zs, zr)
     out["zillow"] = [r for r in zr if r["latitude"] and r["unformattedPrice"]
-                     and 37.70 <= r["latitude"] <= 37.84
-                     and -122.52 <= r["longitude"] <= -122.35]
+                     and 41.84 <= r["latitude"] <= 41.92
+                     and -87.68 <= r["longitude"] <= -87.58]
     print(f"zillow (free): {len(out['zillow']):,} items", flush=True)
 except Exception as e:
     print("zillow failed:", e, flush=True)
@@ -92,11 +102,11 @@ except Exception as e:
 try:
     import craigslist_api
     seen, cl = set(), []
-    for path in ["sfc/apa", "sfc/roo"]:
+    for path in ["chc/apa", "chc/roo"]:
         craigslist_api.harvest(path, 0, 30000, 0, seen, cl)
     out["craigslist"] = [r for r in cl if r["latitude"] and r["price"]
-                         and 37.70 <= r["latitude"] <= 37.84
-                         and -122.52 <= r["longitude"] <= -122.35]
+                         and 41.84 <= r["latitude"] <= 41.92
+                         and -87.68 <= r["longitude"] <= -87.58]
     print(f"craigslist (free API): {len(out['craigslist']):,} items", flush=True)
 except Exception as e:
     print("craigslist API failed:", e, flush=True)

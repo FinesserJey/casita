@@ -4,10 +4,10 @@ icon: lucide/home
 
 # Casita
 
-Casita started as a small tool for a time-boxed San Francisco rental search
-with two large dogs. Searching rental sites by hand was noisy and repetitive,
-so Casita grew out of necessity: scrape the places, enrich them, rank them,
-and publish a page that was easier to review than four open browser tabs.
+Casita is a personal rental-search assistant for downtown Chicago, focused on
+River North, South Loop, West Loop, and Fulton Market. It gathers listings,
+enriches and ranks them against a renter's preferences, and publishes a static
+page that is easier to review than several open browser tabs.
 
 It did its job.
 
@@ -21,9 +21,10 @@ Fork the repo and make it your own. Pick something you think makes Casita
 better: a fix, a test, a refactor, a feature, docs, polish, or a
 simplification, and tell us why you chose it.
 
-The code intentionally keeps the personal-tool shape. Large dogs matter. San
-Francisco walkability matters. Marin drive times matter. Trails, beaches, and
-good bakeries matter. Those assumptions are the product.
+The code intentionally keeps the personal-tool shape. CTA access,
+neighborhood walkability, in-unit laundry, A/C, and covered parking matter.
+One-bedroom, den, and smaller two-bedroom layouts are preferred. Pets are not
+a ranking factor. Those assumptions are configurable in the owning modules.
 
 ## Start Here
 

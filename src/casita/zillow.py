@@ -66,28 +66,19 @@ def captcha_hits() -> int:
 
 from . import cache, dogs
 from .geo import resolve_neighborhood
-from .locations import MARIN_CITY_SLUGS, SF_NEIGHBORHOOD_SLUGS
+from .locations import CHICAGO_NEIGHBORHOOD_SLUGS
 from .models import Listing
 
 NEIGHBORHOODS = {
-    # San Francisco — Richmond / Sunset / Presidio-adjacent.
-    "inner-richmond": "https://www.zillow.com/inner-richmond-san-francisco-ca/rentals/",
-    "outer-richmond": "https://www.zillow.com/outer-richmond-san-francisco-ca/rentals/",
-    "inner-sunset": "https://www.zillow.com/inner-sunset-san-francisco-ca/rentals/",
-    "outer-sunset": "https://www.zillow.com/outer-sunset-san-francisco-ca/rentals/",
-    "lake-street": "https://www.zillow.com/lake-st-san-francisco-ca/rentals/",
-    "presidio-heights": "https://www.zillow.com/presidio-heights-san-francisco-ca/rentals/",
-    # Mill Valley — Marin-side listings need strong trail access and enough
-    # downtown density to work without constant driving.
-    "mill-valley":   "https://www.zillow.com/mill-valley-ca/rentals/",
-    # Sausalito — same Marin rationale: walkable downtown + ferry to SF and
-    # Headlands / Tennessee Valley trail access.
-    "sausalito":     "https://www.zillow.com/sausalito-ca/rentals/",
+    "river-north": "https://www.zillow.com/river-north-chicago-il/rentals/",
+    "south-loop": "https://www.zillow.com/south-loop-chicago-il/rentals/",
+    "west-loop": "https://www.zillow.com/west-loop-chicago-il/rentals/",
+    "fulton-market": "https://www.zillow.com/fulton-market-chicago-il/rentals/",
 }
 
 
 def _validate_neighborhoods() -> None:
-    expected = set(SF_NEIGHBORHOOD_SLUGS) | set(MARIN_CITY_SLUGS)
+    expected = set(CHICAGO_NEIGHBORHOOD_SLUGS)
     actual = set(NEIGHBORHOODS)
     if actual != expected:
         missing = ", ".join(sorted(expected - actual)) or "none"
@@ -246,6 +237,24 @@ def _classify_laundry(value: str) -> str:
     return value[:60]
 
 
+def _classify_covered_parking(value: str) -> bool | None:
+    v = value.lower()
+    if any(term in v for term in ("no parking", "street only", "uncovered", "open lot")):
+        return False
+    if any(term in v for term in ("garage", "covered", "carport")):
+        return True
+    return None
+
+
+def _classify_air_conditioning(value: str) -> bool | None:
+    v = value.strip().lower()
+    if v in {"no", "none", "false", "not available"}:
+        return False
+    if v and v not in {"unknown", "n/a", "not specified"}:
+        return True
+    return None
+
+
 # Match listing-photo URLs. Zillow's photo URL suffixes encode purpose:
 #   -cc_ft_<size>.jpg  → real unit listing photos (cover-crop fixed-thumb)
 #   -p_e.webp / -p_i.jpg → building photos on /apartments/ multi-unit pages
@@ -322,8 +331,14 @@ def _parse_detail_html(html: str, listing: Listing) -> None:
     )
     if parking_val:
         listing.parking = _classify_parking(parking_val)
+        listing.covered_parking = _classify_covered_parking(parking_val)
     elif facts.get("has attached garage", "").lower() == "yes":
         listing.parking = "attached garage"
+        listing.covered_parking = True
+
+    air_conditioning = facts.get("air conditioning") or facts.get("cooling")
+    if air_conditioning:
+        listing.air_conditioning = _classify_air_conditioning(air_conditioning)
 
     # Laundry.
     laundry_val = facts.get("laundry") or facts.get("laundry features")

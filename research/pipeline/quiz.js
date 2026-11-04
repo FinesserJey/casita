@@ -59,7 +59,7 @@ const QUIZ = (() => {
     // Errands drawn on the map are the ones tied to a stated priority. Someone
     // who never mentioned the gym does not get a gym line on their map.
     const errands = [];
-    for (const k of ["grocery", "gym", "transit"])
+    for (const k of ["grocery", "gym", "transit", "bakery", "dining", "culture", "shopping"])
       if (p.priorities[k]) errands.push(k);
     if (p.priorities.nightlife) errands.push("nightlife");
     if (p.priorities.walk && !errands.includes("grocery")) errands.push("grocery");
@@ -68,6 +68,8 @@ const QUIZ = (() => {
     // against, so the slider moves a real number rather than a mood.
     const base = p.beds >= 2 ? 900 : p.beds === 1 ? 700 : 500;
     return Object.assign({}, p, {
+      pets: "none",
+      must: (p.must || []).filter((key) => key !== "pets" && key !== "rc"),
       errands,
       idealSqft: Math.round(base * (0.85 + p.spaceVsLocation / 100 * 0.45)),
       // Wanting a lively block and wanting quiet nights are the same axis read
@@ -81,17 +83,15 @@ const QUIZ = (() => {
      dead address box on screen two is a dead product. Nominatim is the
      fallback for anything the local index does not know, and it is keyless. */
   const LANDMARKS = [
-    ["Mission Bay", 37.7706, -122.3893], ["Financial District", 37.7936, -122.3993],
-    ["SoMa", 37.7785, -122.4056], ["Downtown / Union Square", 37.7880, -122.4074],
-    ["Mission District", 37.7599, -122.4148], ["Castro", 37.7609, -122.4350],
-    ["Hayes Valley", 37.7765, -122.4241], ["Nob Hill", 37.7930, -122.4161],
-    ["Marina", 37.8021, -122.4367], ["Presidio", 37.7989, -122.4662],
-    ["Dogpatch", 37.7576, -122.3880], ["Potrero Hill", 37.7605, -122.4008],
-    ["Sunset", 37.7521, -122.4943], ["Richmond", 37.7801, -122.4644],
-    ["Berkeley", 37.8715, -122.2730], ["Oakland Downtown", 37.8044, -122.2712],
-    ["Palo Alto", 37.4419, -122.1430], ["SFO Airport", 37.6213, -122.3790],
-    ["UCSF Parnassus", 37.7632, -122.4585], ["Salesforce Tower", 37.7897, -122.3972],
-    ["Chase Center", 37.7680, -122.3877], ["Golden Gate Park", 37.7694, -122.4862],
+    ["River North", 41.8925, -87.6341], ["West Loop", 41.8820, -87.6478],
+    ["Fulton Market", 41.8868, -87.6487], ["South Loop", 41.8650, -87.6270],
+    ["Chicago Loop", 41.8837, -87.6298], ["CTA Chicago Station", 41.8964, -87.6280],
+    ["CTA Clark/Lake Station", 41.8857, -87.6308], ["CTA Morgan Station", 41.8857, -87.6524],
+    ["CTA Roosevelt Station", 41.8674, -87.6274], ["Oak Street Beach", 41.9028, -87.6228],
+    ["Ohio Street Beach", 41.8931, -87.6122], ["North Avenue Beach", 41.9177, -87.6260],
+    ["Navy Pier", 41.8917, -87.6078], ["Millennium Park", 41.8826, -87.6226],
+    ["Art Institute of Chicago", 41.8796, -87.6237], ["Chicago Theatre", 41.8854, -87.6278],
+    ["United Center", 41.8807, -87.6742], ["Museum Campus", 41.8663, -87.6169],
   ];
 
   function searchPlaces(q) {
@@ -99,7 +99,7 @@ const QUIZ = (() => {
     if (s.length < 2) return [];
     const out = [];
     for (const [nm, la, lo] of LANDMARKS)
-      if (nm.toLowerCase().includes(s)) out.push({ name: nm, lat: la, lon: lo, sub: "San Francisco Bay Area" });
+      if (nm.toLowerCase().includes(s)) out.push({ name: nm, lat: la, lon: lo, sub: "Chicago" });
     for (const p of GEO.PL) {
       if (out.length > 9) break;
       if ((p.n || "").toLowerCase().includes(s))
@@ -110,7 +110,7 @@ const QUIZ = (() => {
 
   async function geocode(q) {
     const u = "https://nominatim.openstreetmap.org/search?format=json&limit=5"
-            + "&viewbox=-122.6,37.95,-122.0,37.55&bounded=1&q=" + encodeURIComponent(q);
+            + "&viewbox=-88.0,42.1,-87.4,41.5&bounded=1&q=" + encodeURIComponent(q);
     try {
       const r = await fetch(u, { headers: { Accept: "application/json" } });
       return (await r.json()).map((x) => ({
@@ -131,22 +131,22 @@ const QUIZ = (() => {
     ["star", "Someone I visit"], ["building", "School"], ["coffee", "Somewhere I go a lot"],
   ];
 
-  // Only amenities the data can actually answer. There is no parking, elevator
-  // or doorman field in any of the three sources, and a pill that can never be
-  // confirmed is a promise the results page would have to break.
+  // Unknown facts remain visible for verification; only a reported negative
+  // can disqualify a must-have.
   const AMENITIES = [
     ["ac", "snowflake", "A/C"], ["wd", "window", "In-unit laundry"],
+    ["covered_parking", "building", "Covered parking"],
     ["dishwasher", "grid", "Dishwasher"], ["outdoor", "tree", "Outdoor space"],
     ["storage", "building", "Storage / walk-in"], ["furnished", "window", "Furnished"],
-    ["rc", "shield", "Rent-controlled"],
   ];
 
   const PRIORITIES = [
-    ["quiet", "moon", "Quiet nights"], ["street", "shield", "Safety of the block"],
     ["cost", "money", "Lower monthly cost"], ["space", "ruler", "More space"],
-    ["management", "wrench", "Good management"], ["residents", "star", "Resident satisfaction"],
-    ["transit", "train", "Transit"], ["walk", "walk", "Walkability"],
-    ["nightlife", "wine", "Nightlife"], ["grocery", "cart", "Grocery access"],
+    ["residents", "star", "Resident satisfaction"],
+    ["transit", "train", "CTA/train access"], ["walk", "walk", "Walkability"],
+    ["nightlife", "wine", "Bars & nightlife"], ["dining", "wine", "Restaurants"],
+    ["bakery", "coffee", "Bakeries"], ["culture", "star", "Arts & entertainment"],
+    ["shopping", "cart", "Shopping & activities"], ["grocery", "cart", "Grocery access"],
     ["gym", "dumbbell", "Gym access"], ["commute", "briefcase", "Short commute"],
     ["character", "sparkle", "Standout features"],
   ];
@@ -160,7 +160,7 @@ const QUIZ = (() => {
     {
       section: "What you need",
       title: "What can you spend?",
-      sub: "Total monthly housing cost - not just the advertised rent. We compare against our estimate of the real number.",
+      sub: "Compare advertised rent with your budget. Utilities and mandatory fees are unknown unless the listing states them.",
       body: () => `
         <div class="q-budget">
           <div class="q-bnum">
@@ -190,11 +190,7 @@ const QUIZ = (() => {
             ["later", "1–3 months"], ["flex", "Flexible"]]
           .map(([v, l]) => `<button class="q-pill ${D.moveIn === v ? "on" : ""}" data-movein="${v}">${l}</button>`).join("")}</div>
 
-        <p class="q-label">Pets</p>
-        <div class="q-pills">${[["none", "🚫 None"], ["cat", "🐈 Cat"], ["dog", "🐕 Dog"]]
-          .map(([v, l]) => `<button class="q-pill ${D.pets === v ? "on" : ""}" data-pets="${v}">${l}</button>`).join("")}</div>
-        ${D.pets === "dog" ? `<p class="q-note">We'll only show places whose policy mentions dogs,
-          and add a Walks tab that maps a loop from the front door past the nearest green space.</p>` : ""}`,
+        <p class="q-note">Pet policy does not affect listing eligibility or ranking.</p>`,
     },
     {
       section: "What you need",
@@ -240,10 +236,10 @@ const QUIZ = (() => {
     },
     {
       /* The old wording was "Where does your life happen?", which reads well
-         and quietly assumes you already know. A lot of people filling this in
-         are moving to San Francisco and do not have an office address, a gym,
-         or a regular anything yet, and being asked to pin your life to a map
-         before you have one is a good way to make someone feel behind.
+         and quietly assumes you already know. A lot of people do not have an
+         office address, a gym, or a regular anything yet, and being asked to
+         pin your life to a map before you have one is a good way to make
+         someone feel behind.
 
          The step still does the same work. It just says out loud what was
          already true: the search accepts neighbourhoods and landmarks, not
@@ -251,7 +247,7 @@ const QUIZ = (() => {
       section: "Your life",
       title: "Anywhere you need to be near?",
       sub: "Skip this if you're not sure yet. A rough answer is worth more than a precise "
-         + "guess - \"SoMa\" or \"Caltrain\" works as well as a street address.",
+         + "guess - \"River North\" or a CTA station works as well as a street address.",
       body: () => `
         <div class="q-anchors">${D.anchors.map((an, i) =>
           `<div class="q-anchor">${ICON.svg(an.icon, 17)}

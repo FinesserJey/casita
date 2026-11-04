@@ -52,7 +52,7 @@ async def context(headless: bool = False, persistent: bool = True,
                 user_agent=UA,
                 viewport={"width": 1440, "height": 900},
                 locale="en-US",
-                timezone_id="America/Los_Angeles",
+                timezone_id="America/Chicago",
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--disable-features=IsolateOrigins,site-per-process",
@@ -74,7 +74,7 @@ async def context(headless: bool = False, persistent: bool = True,
                 user_agent=UA,
                 viewport={"width": 1440, "height": 900},
                 locale="en-US",
-                timezone_id="America/Los_Angeles",
+                timezone_id="America/Chicago",
             )
             await ctx.add_init_script(STEALTH_JS)
             if fresh:

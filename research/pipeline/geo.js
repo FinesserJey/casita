@@ -25,8 +25,7 @@ const GEO = (() => {
     return Math.hypot((lo2 - lo1) * mLon(la1), (la2 - la1) * M_LAT);
   }
 
-  // SF's grid costs roughly 30% over the crow-flight distance. Speeds are
-  // door to door, including the waiting and parking nobody counts.
+  // Straight-line estimates include a modest allowance for street circuity.
   const CIRCUITY = 1.30;
   const SPEED = { walk: 78, bike: 200, transit: 240, drive: 330 };  // metres/min
 
@@ -61,7 +60,7 @@ const GEO = (() => {
       for (let i = ci - r; i <= ci + r; i++) {
         for (let j = cj - r; j <= cj + r; j++) {
           for (const p of (grid.get(`${i},${j}`) || [])) {
-            if (p.k !== kind) continue;
+            if (!(Array.isArray(kind) ? kind : [kind]).includes(p.k)) continue;
             if (brand && !(p.b === brand || p.n === brand ||
                 (p.n || "").toLowerCase().includes(brand.toLowerCase()))) continue;
             const d = metres(a.lat, a.lon, p.la, p.lo);
@@ -119,9 +118,18 @@ const GEO = (() => {
     grocery:  { icon: "cart", label: "Grocery",  kind: "grocery" },
     gym:      { icon: "🏋️", label: "Gym",      kind: "gym" },
     transit:  { icon: "🚇", label: "Transit",  kind: "transit" },
+    bakery:   { icon: "coffee", label: "Bakery", kind: "bakery" },
+    dining:   { icon: "wine", label: "Restaurants", kind: "restaurant" },
+    culture:  { icon: "star", label: "Entertainment",
+                kind: ["cinema", "theatre", "music", "gallery", "arcade"] },
+    shopping: { icon: "cart", label: "Shopping", kind: "shopping" },
     cafe:     { icon: "coffee", label: "Café",     kind: "cafe" },
     park:     { icon: "tree", label: "Park",     kind: "park" },
     nightlife:{ icon: "wine", label: "Nightlife", kind: "bar" },
+    bakery:   { icon: "coffee", label: "Bakery", kind: "bakery" },
+    entertainment: { icon: "star", label: "Entertainment",
+                     kind: ["cinema", "theatre", "music", "gallery", "arcade"] },
+    shopping: { icon: "cart", label: "Shopping", kind: "shopping" },
   };
 
   /* Profiles saved before the icon set existed hold emoji. Map them rather
@@ -191,15 +199,17 @@ const GEO = (() => {
      other line on this map, and the distance is the sum of those legs with the
      same detour allowance. It is a suggestion of a loop, and the panel says so.
 
-     Blocks with heavy street-incident percentiles are avoided where an
-     alternative of the same kind exists nearby -- that is the "safe" half of a
-     safe, fun walk, and it uses the same coverage-corrected percentile the
-     Street tab shows rather than a separate invented safety number. */
+     Civic-report layers are not used to rank or route these loops. */
   const WALKS = {
     dog:    { icon: "dog", label: "Dog walk",  kinds: ["park"], stops: 3, want: 2200 },
     park:   { icon: "tree", label: "Green loop", kinds: ["park"], stops: 3, want: 2200 },
     coffee: { icon: "coffee", label: "Coffee walk", kinds: ["cafe"], stops: 3, want: 1500 },
     night:  { icon: "wine", label: "Night out",  kinds: ["bar", "club", "music"], stops: 4, want: 1600 },
+    culture:{ icon: "star", label: "Arts & entertainment",
+              kinds: ["cinema", "theatre", "music", "gallery", "arcade"], stops: 4, want: 1800 },
+    shopping:{ icon: "cart", label: "Shopping", kinds: ["shopping"], stops: 3, want: 1800 },
+    bakery: { icon: "coffee", label: "Bakery walk", kinds: ["bakery"], stops: 3, want: 1400 },
+    dining: { icon: "wine", label: "Dining walk", kinds: ["restaurant"], stops: 4, want: 1800 },
     errand: { icon: "cart", label: "Errand run", kinds: ["grocery", "pharmacy"], stops: 2, want: 1600 },
   };
 
@@ -260,9 +270,12 @@ const GEO = (() => {
   // Which walks are worth offering here, given what the renter said matters.
   function walksFor(P) {
     const out = [];
-    if ((P.pets || "none") === "dog") out.push("dog");
     if (P.priorities && P.priorities.nightlife) out.push("night");
-    if (P.priorities && (P.priorities.walk || P.priorities.quiet)) out.push("park");
+    if (P.priorities && P.priorities.culture) out.push("culture");
+    if (P.priorities && P.priorities.shopping) out.push("shopping");
+    if (P.priorities && P.priorities.bakery) out.push("bakery");
+    if (P.priorities && P.priorities.dining) out.push("dining");
+    if (P.priorities && P.priorities.walk) out.push("park");
     out.push("coffee", "errand");
     return [...new Set(out)].slice(0, 4);
   }
@@ -279,15 +292,15 @@ const GEO = (() => {
     if (lv === "neighbourhood")
       return ((a.loc && a.loc.why) || "The source published only a neighbourhood") +
              ", so this pin is the middle of that area and every distance below could be out by half a mile in any direction.";
-    if (!a.parcel_ok)
-      return "This address never matched a building on the city parcel map, so the pin - and every distance measured from it - is approximate.";
+    if (a.fuzzy)
+      return "The source provides an approximate pin, so nearby places and travel distances may be off.";
     return null;
   }
 
   // A time measured from a neighbourhood centroid is not a time, it is a range.
   // Printing "6 min" off a pin that could be half a mile out is the sort of
   // false precision this whole file exists to avoid.
-  const soft = (a) => (a.loc || {}).level === "neighbourhood" || !a.parcel_ok;
+  const soft = (a) => (a.loc || {}).level === "neighbourhood" || !!a.fuzzy;
 
   /* How much of a distance claim survives the pin being a guess.
 

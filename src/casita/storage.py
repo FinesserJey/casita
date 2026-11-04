@@ -45,7 +45,10 @@ CREATE TABLE IF NOT EXISTS listings (
   pets_allowed INTEGER,
   dog_policy TEXT,
   parking TEXT,
+  covered_parking INTEGER,
   laundry TEXT,
+  air_conditioning INTEGER,
+  has_den INTEGER,
   has_yard INTEGER,
   yard_note TEXT,
   llm_rank INTEGER,
@@ -169,7 +172,8 @@ COLUMNS = [
     "key", "source", "source_id", "url", "title", "address",
     "neighborhood", "neighborhood_resolved",
     "price", "beds", "baths", "sqft", "pets_allowed", "dog_policy",
-    "parking", "laundry", "has_yard", "yard_note", "llm_rank", "llm_reason", "llm_severity",
+    "parking", "covered_parking", "laundry", "air_conditioning", "has_den",
+    "has_yard", "yard_note", "llm_rank", "llm_reason", "llm_severity",
     "contact_name", "contact_phone", "contact_email", "contact_url", "contact_note",
     "description", "image_url", "photos_json", "lat", "lng", "raw_json",
     "light_quality", "view_quality", "condition_quality",
@@ -188,7 +192,10 @@ _NEW_COLUMNS: list[tuple[str, str, str]] = [
     ("listings", "llm_reason", "TEXT"),
     ("listings", "llm_severity", "TEXT"),
     ("listings", "dog_policy", "TEXT"),
+    ("listings", "covered_parking", "INTEGER"),
     ("listings", "laundry", "TEXT"),
+    ("listings", "air_conditioning", "INTEGER"),
+    ("listings", "has_den", "INTEGER"),
     ("listings", "lat", "REAL"),
     ("listings", "lng", "REAL"),
     ("listings", "light_quality", "TEXT"),
@@ -246,7 +253,10 @@ def _listing_to_row(L: Listing) -> dict:
         "pets_allowed": None if L.pets_allowed is None else int(L.pets_allowed),
         "dog_policy": L.dog_policy,
         "parking": L.parking,
+        "covered_parking": None if L.covered_parking is None else int(L.covered_parking),
         "laundry": L.laundry,
+        "air_conditioning": None if L.air_conditioning is None else int(L.air_conditioning),
+        "has_den": None if L.has_den is None else int(L.has_den),
         "has_yard": None if L.has_yard is None else int(L.has_yard),
         "yard_note": L.yard_note,
         "llm_rank": L.llm_rank,
@@ -271,6 +281,7 @@ def _listing_to_row(L: Listing) -> dict:
         "visual_summary": L.visual_summary,
         "share_blurb": L.share_blurb,
         "share_token": L.share_token,
+        "posted_at": L.posted_at,
     }
 
 
@@ -290,7 +301,14 @@ def _row_to_listing(row: sqlite3.Row) -> Listing:
         pets_allowed=None if row["pets_allowed"] is None else bool(row["pets_allowed"]),
         dog_policy=row["dog_policy"],
         parking=row["parking"],
+        covered_parking=(
+            None if row["covered_parking"] is None else bool(row["covered_parking"])
+        ),
         laundry=row["laundry"],
+        air_conditioning=(
+            None if row["air_conditioning"] is None else bool(row["air_conditioning"])
+        ),
+        has_den=None if row["has_den"] is None else bool(row["has_den"]),
         has_yard=None if row["has_yard"] is None else bool(row["has_yard"]),
         yard_note=row["yard_note"],
         llm_rank=row["llm_rank"],
@@ -315,6 +333,7 @@ def _row_to_listing(row: sqlite3.Row) -> Listing:
         visual_summary=row["visual_summary"],
         share_blurb=row["share_blurb"],
         share_token=row["share_token"],
+        posted_at=row["posted_at"] if "posted_at" in row.keys() else None,
         first_seen=row["first_seen"] if "first_seen" in row.keys() else None,
     )
 

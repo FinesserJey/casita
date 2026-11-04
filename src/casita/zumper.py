@@ -18,7 +18,7 @@ from playwright.async_api import BrowserContext
 
 from .browser import UA
 from .geo import resolve_neighborhood
-from .locations import MARIN_CITY_SLUGS, SF_NEIGHBORHOOD_SLUGS
+from .locations import CHICAGO_NEIGHBORHOOD_SLUGS
 from .models import Listing
 
 # Zumper stamps "BR/BA" titles for unnamed buildings — those add no signal
@@ -26,19 +26,15 @@ from .models import Listing
 _TITLE_BR_RE = re.compile(r"^\d+\s*BR\s*/\s*\d+(?:\.\d+)?\s*BA", re.IGNORECASE)
 
 NEIGHBORHOODS = {
-    "inner-richmond":   "https://www.zumper.com/apartments-for-rent/san-francisco-ca/inner-richmond?bed=2,3&dogs=true",
-    "outer-richmond":   "https://www.zumper.com/apartments-for-rent/san-francisco-ca/outer-richmond?bed=2,3&dogs=true",
-    "inner-sunset":     "https://www.zumper.com/apartments-for-rent/san-francisco-ca/inner-sunset?bed=2,3&dogs=true",
-    "outer-sunset":     "https://www.zumper.com/apartments-for-rent/san-francisco-ca/outer-sunset?bed=2,3&dogs=true",
-    "lake-street":      "https://www.zumper.com/apartments-for-rent/san-francisco-ca/lake-street?bed=2,3&dogs=true",
-    "presidio-heights": "https://www.zumper.com/apartments-for-rent/san-francisco-ca/presidio-heights?bed=2,3&dogs=true",
-    "mill-valley":      "https://www.zumper.com/apartments-for-rent/mill-valley-ca?bed=2,3&dogs=true",
-    "sausalito":        "https://www.zumper.com/apartments-for-rent/sausalito-ca?bed=2,3&dogs=true",
+    "river-north": "https://www.zumper.com/apartments-for-rent/chicago-il/river-north?bed=1,2",
+    "south-loop": "https://www.zumper.com/apartments-for-rent/chicago-il/south-loop?bed=1,2",
+    "west-loop": "https://www.zumper.com/apartments-for-rent/chicago-il/west-loop?bed=1,2",
+    "fulton-market": "https://www.zumper.com/apartments-for-rent/chicago-il/fulton-market?bed=1,2",
 }
 
 
 def _validate_neighborhoods() -> None:
-    expected = set(SF_NEIGHBORHOOD_SLUGS) | set(MARIN_CITY_SLUGS)
+    expected = set(CHICAGO_NEIGHBORHOOD_SLUGS)
     actual = set(NEIGHBORHOODS)
     if actual != expected:
         missing = ", ".join(sorted(expected - actual)) or "none"
@@ -150,11 +146,7 @@ def _record_to_listing(rec: dict, neighborhood: str) -> Listing | None:
         sqft=sqft,
         image_url=image_url,
         photos=photos,
-        pets_allowed=True,  # we searched dogs=true; enrich refines from the detail page
-        # The search filtered on dogs=true, so "dogs allowed" is known, but the
-        # size rule is not. `dogs_ok` is the honest floor: enrichment can only
-        # sharpen it to large_ok or small_only, never invent it from None.
-        dog_policy="dogs_ok",
+        # Pet policy is not a search filter for this use case.
         posted_at=posted_at,
         lat=lat,
         lng=lng,

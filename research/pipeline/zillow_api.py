@@ -1,4 +1,4 @@
-"""Zillow SF rentals from the public search pages.
+"""Zillow downtown Chicago rentals from the public search pages.
 
 Zillow's JSON endpoint sits behind PerimeterX, so this reads the ordinary search
 page instead — the same HTML any visitor gets — and parses the listing data
@@ -10,7 +10,7 @@ import json, re, sys, time, urllib.parse, urllib.request
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 SPLIT_ABOVE = 300      # keep bands inside the range Zillow pages reliably
-BOUNDS = {"west": -122.5170, "east": -122.3560, "south": 37.7040, "north": 37.8340}
+BOUNDS = {"west": -87.68, "east": -87.58, "south": 41.84, "north": 41.92}
 
 
 def page_url(page=1, lo=None, hi=None):
@@ -24,9 +24,9 @@ def page_url(page=1, lo=None, hi=None):
         fs["mp"] = mp                      # monthly payment = rent filter
     sqs = {"pagination": ({"currentPage": page} if page > 1 else {}),
            "isMapVisible": False, "isListVisible": True,
-           "mapBounds": BOUNDS, "usersSearchTerm": "San Francisco, CA",
+           "mapBounds": BOUNDS, "usersSearchTerm": "Chicago, IL",
            "filterState": fs}
-    return ("https://www.zillow.com/san-francisco-ca/rentals/?searchQueryState="
+    return ("https://www.zillow.com/chicago-il/rentals/?searchQueryState="
             + urllib.parse.quote(json.dumps(sqs, separators=(",", ":"))))
 
 
@@ -191,8 +191,8 @@ if __name__ == "__main__":
     seen, rows = set(), []
     harvest(0, 30000, seen, rows)
     good = [r for r in rows if r["latitude"] and r["unformattedPrice"]
-            and 37.70 <= r["latitude"] <= 37.84 and -122.52 <= r["longitude"] <= -122.35]
+            and 41.84 <= r["latitude"] <= 41.92 and -87.68 <= r["longitude"] <= -87.58]
     print(f"\nunique zillow listings: {len(rows):,}")
-    print(f"  in SF with price:     {len(good):,}")
+    print(f"  downtown Chicago with price: {len(good):,}")
     print(f"  with photo:           {sum(1 for r in good if r['imgSrc']):,}")
     json.dump(good, open("zillow_api.json", "w"))

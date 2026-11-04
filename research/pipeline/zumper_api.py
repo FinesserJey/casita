@@ -65,11 +65,10 @@ HEADERS = {
 }
 
 ROOT = "https://www.zumper.com"
-CITY = ROOT + "/apartments-for-rent/san-francisco-ca"
+CITY = ROOT + "/apartments-for-rent/chicago-il"
 
-# The city search stops at 275 listings however far you page it, which is a
-# small fraction of San Francisco. Splitting the search walks past that ceiling
-# -- but not the way zillow_api.py does it. Zillow honours a price band in the
+# The city search stops at 275 listings however far you page it. Splitting the
+# search walks past that ceiling -- but not the way zillow_api.py does it. Zillow honours a price band in the
 # query string; Zumper does not honour anything in the query string, because it
 # server-renders one default result set and applies filters client-side after
 # hydration. `?min-price=3000`, `?price=3000-3500` and `?bed=1` all come back
@@ -84,7 +83,7 @@ CITY = ROOT + "/apartments-for-rent/san-francisco-ca"
 # scraper hard-coded six slugs, all of them in the Richmond and the Sunset, and
 # a list that only its author could have chosen is a list nobody will notice
 # has gone stale.
-SF = (37.70, 37.84, -122.52, -122.35)
+CHICAGO = (41.84, 41.92, -87.68, -87.58)
 
 
 def get(url, tries=3):
@@ -155,12 +154,12 @@ def listables(doc):
     return box.get("listables") or []
 
 
-def in_sf(it):
+def in_chicago(it):
     try:
         la, lo = float(it.get("lat")), float(it.get("lng"))
     except (TypeError, ValueError):
         return False
-    return SF[0] <= la <= SF[1] and SF[2] <= lo <= SF[3]
+    return CHICAGO[0] <= la <= CHICAGO[1] and CHICAGO[2] <= lo <= CHICAGO[3]
 
 
 def areas(doc):
@@ -168,6 +167,9 @@ def areas(doc):
     cur = (doc or {}).get("currentSearch") or {}
     out = []
     for n in (cur.get("city") or {}).get("neighborhoods") or []:
+        name = (n.get("name") or "").strip().lower()
+        if not any(area in name for area in ("river north", "west loop", "fulton market", "south loop")):
+            continue
         url = n.get("url") or n.get("slug") or ""
         if url.startswith("/"):
             out.append((n.get("name") or url.rsplit("/", 1)[-1], ROOT + url))
@@ -188,7 +190,7 @@ def sweep(url, label, max_pages, seen, out, pace):
         items = listables(preloaded(get(url if page == 1 else f"{url}{sep}page={page}")))
         if not items:
             break
-        fresh = [i for i in items if i.get("listing_id") not in seen and in_sf(i)]
+        fresh = [i for i in items if i.get("listing_id") not in seen and in_chicago(i)]
         for i in fresh:
             seen.add(i.get("listing_id"))
         out += fresh
@@ -219,7 +221,7 @@ def main():
     pages = int(sys.argv[sys.argv.index("--pages") + 1]) if "--pages" in sys.argv else 40
     rows = harvest(max_pages=pages)
 
-    print(f"\n  collected {len(rows):,} listings in San Francisco")
+    print(f"\n  collected {len(rows):,} listings in downtown Chicago")
     feeds = collections.Counter(r.get("feed_name") or "(direct)" for r in rows)
     print("  who supplied them:")
     for k, v in feeds.most_common(8):

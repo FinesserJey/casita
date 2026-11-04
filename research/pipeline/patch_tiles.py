@@ -80,8 +80,8 @@ function drawMap(){
   mx.fillStyle = "#E8E4DE"; mx.fillRect(0,0,MW,MH);
   drawTiles();
 
-  const HEAT = {encampment:"180,110,40", break_in:"150,60,90",
-                violent:"170,45,45", cleaning:"120,120,90"};
+  const HEAT = {graffiti:"120,150,120", vehicle_theft:"150,60,90",
+                violent:"170,45,45"};
   if (HEAT[mapLayer] && GRID[mapLayer]){
     const cells = GRID[mapLayer];
     const top = Math.max(...cells.map(c=>c[2]));

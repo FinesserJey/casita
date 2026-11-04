@@ -24,7 +24,7 @@ kind of inventory Craigslist has and the aggregators mostly miss.
 
 It also carries `isIncomeRestricted`, which is the only structured
 below-market-rate flag on any feed in this pipeline. Only a handful of rows in
-San Francisco set it, so it is thin rather than useless, and it is passed
+the legacy sample set it, so it is thin rather than useless, and it is passed
 through rather than scored.
 
 Plain JSON, no key, no browser, no bot wall. Two requests cover the city.
@@ -45,12 +45,11 @@ import urllib.request
 HERE = pathlib.Path(__file__).resolve().parent
 OUT = HERE / "redfin_raw.json"
 
-# region 17151 / type 6 is the city of San Francisco in Redfin's gazetteer.
 API = ("https://www.redfin.com/stingray/api/v1/search/rentals"
-       "?al=1&market=sanfrancisco&region_id=17151&region_type=6")
-PAGE = "https://www.redfin.com/city/17151/CA/San-Francisco/apartments-for-rent"
+       "?al=1&market=chicago&region_id=29470&region_type=6")
+PAGE = "https://www.redfin.com/city/29470/IL/Chicago/apartments-for-rent"
 PHOTO = "https://ssl.cdn-redfin.com/photo/rent/{rid}/islphoto/genIsl.{i}_{v}.jpg"
-SF = (37.70, 37.84, -122.52, -122.35)
+CHICAGO = (41.84, 41.92, -87.68, -87.58)
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
@@ -126,13 +125,13 @@ def photos(home, rx, cap=8):
     return out
 
 
-def in_sf(home):
+def in_chicago(home):
     c = ((home.get("addressInfo") or {}).get("centroid") or {}).get("centroid") or {}
     try:
         la, lo = float(c.get("latitude")), float(c.get("longitude"))
     except (TypeError, ValueError):
         return False
-    return SF[0] <= la <= SF[1] and SF[2] <= lo <= SF[3]
+    return CHICAGO[0] <= la <= CHICAGO[1] and CHICAGO[2] <= lo <= CHICAGO[3]
 
 
 def harvest(page_size=350, max_pages=6, pace=1.4):
@@ -148,7 +147,7 @@ def harvest(page_size=350, max_pages=6, pace=1.4):
         for h in homes:
             hd, rx = h.get("homeData") or {}, h.get("rentalExtension") or {}
             pid = hd.get("propertyId") or rx.get("rentalId")
-            if not pid or pid in seen or not in_sf(hd):
+            if not pid or pid in seen or not in_chicago(hd):
                 continue
             seen.add(pid)
             out.append(h)
@@ -163,7 +162,7 @@ def harvest(page_size=350, max_pages=6, pace=1.4):
 
 def main():
     rows = harvest()
-    print(f"\n  collected {len(rows):,} rentals in San Francisco")
+    print(f"\n  collected {len(rows):,} rentals in downtown Chicago")
     feeds = collections.Counter(
         (r.get("rentalExtension") or {}).get("feedOriginalSource") or "(none)"
         for r in rows)

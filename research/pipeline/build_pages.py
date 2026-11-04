@@ -6,9 +6,8 @@ did not have: the prototype layout, and a build stamp. The stamp is why this
 exists as a file rather than staying inline -- the page could say when its
 data was scraped only if something told it, and nothing did.
 
-    python3 research/pipeline/build_pages.py            every page
-    python3 research/pipeline/build_pages.py --proto    prototype only
-    python3 research/pipeline/build_pages.py --new      the redesign only
+    python3 research/pipeline/build_pages.py            Chicago review page
+    python3 research/pipeline/build_pages.py --public   sanitised public page
 
 Casita (casita.html) is a separate page rather than an edit to the old
 dashboard (huntly.html) because it is a different product, not a different
@@ -31,26 +30,17 @@ def read(name):
     return open(HERE / name, encoding="utf-8").read()
 
 
-def build(data_json, proto=False, new=False, data_src="app_data.json"):
-    # casita.html is the redesign; huntly.html is the old dashboard, kept
-    # buildable until the redesign replaces it outright.
-    html = read("casita.html" if new else "huntly.html")
+def build(data_json, data_src="app_data.json"):
+    html = read("casita.html")
     html = html.replace("/*__DATA__*/", data_json)
     html = html.replace("/*__GRID__*/", read("street_grid.json"))
     html = html.replace("/*__PLACES__*/", read("places.json"))
-    if new:
-        # Order matters: each of these reads the ones above it at load time.
-        for slot, src in (("ICONS", "icons.js"), ("MAPKIT", "mapkit.js"), ("GEO", "geo.js"),
-                          ("HOODS", "hoods.js"),
-                          ("ROUTER", "router.js"), ("FACTORS", "factors.js"), ("DEAL", "deal.js"),
-                          ("QUIZ", "quiz.js"), ("CANVAS", "canvas.js")):
-            html = html.replace(f"/*__{slot}__*/", read(src))
-    else:
-        html = html.replace("/*__APP__*/", read("app.js"))
-        life = read("life.js")
-        if proto:
-            life += "\n/* ---- layout prototype ---- */\n" + read("proto.js")
-        html = html.replace("/*__LIFE__*/", life)
+    # Order matters: each of these reads the ones above it at load time.
+    for slot, src in (("ICONS", "icons.js"), ("MAPKIT", "mapkit.js"), ("GEO", "geo.js"),
+                      ("HOODS", "hoods.js"),
+                      ("ROUTER", "router.js"), ("FACTORS", "factors.js"), ("DEAL", "deal.js"),
+                      ("QUIZ", "quiz.js"), ("CANVAS", "canvas.js")):
+        html = html.replace(f"/*__{slot}__*/", read(src))
 
     # When the listing data was last written, not when this ran: rebuilding the
     # page without re-scraping must not make stale listings look fresh.
@@ -74,14 +64,23 @@ def build(data_json, proto=False, new=False, data_src="app_data.json"):
         anchor,
         anchor + f'\n<meta name="casita:scraped" '
                  f'content="{scraped.isoformat(timespec="seconds")}">', 1)
-    if proto:
-        html = html.replace("<title>Casita", "<title>Casita (prototype layout) — Casita", 1)
     return html, scraped
 
 
+def require_chicago_data(data):
+    """Do not label the checked-in San Francisco sample as a Chicago build."""
+    if not data:
+        sys.exit("no listings to build; refusing to publish an empty Chicago page")
+    for listing in data:
+        try:
+            lat, lon = float(listing["lat"]), float(listing["lon"])
+        except (KeyError, TypeError, ValueError):
+            sys.exit("listing data is missing Chicago coordinates; refusing to build")
+        if not (41.64 <= lat <= 42.03 and -87.95 <= lon <= -87.52):
+            sys.exit("listing data contains non-Chicago coordinates; refresh Chicago data first")
+
+
 def main():
-    only_proto = "--proto" in sys.argv
-    only_new = "--new" in sys.argv
     # --public builds from the sanitised corpus instead of the raw one. It is a
     # separate flag rather than the default because the local page is allowed
     # to show the owner name and the phone number -- that is the whole point of
@@ -91,22 +90,18 @@ def main():
     if public and not (HERE / src).exists():
         sys.exit("run sanitize_public.py first -- refusing to publish raw data")
 
-    # A fresh clone has no app_data.json: the raw scrape carries owner names and
-    # phone numbers and is deliberately not in the repo. The sanitised fixture
-    # is, so fall back to it rather than failing. Someone who has just cloned
-    # this should be able to build the page and look at it; the alternative is a
-    # repo you can read but not run.
+    # A fresh clone has no Chicago scrape. The checked-in public sample is
+    # still San Francisco data, so it must not be rendered under Chicago labels.
     if not public and not (HERE / src).exists():
-        src = "app_data.public.json"
-        print("   no local scrape found - building from the sanitised fixture")
+        sys.exit("no local Chicago scrape found; run the Chicago research pipeline first")
     data = json.load(open(HERE / src))
+    require_chicago_data(data)
     data_json = json.dumps(data, separators=(",", ":"))
 
-    # (path, proto, new)
     if public:
         out = RESEARCH / "public" / "index.html"
         out.parent.mkdir(exist_ok=True)
-        html, scraped = build(data_json, new=True, data_src=src)
+        html, scraped = build(data_json, data_src=src)
         # The page checks this before offering anything that needs a server.
         html = html.replace('<meta charset="utf-8">',
                             '<meta charset="utf-8">\n'
@@ -116,19 +111,11 @@ def main():
               f"  (data scraped {scraped:%Y-%m-%d %H:%M})")
         return
 
-    targets = [(RESEARCH / "casita-demo.html", False, True)]
-    if not only_new:
-        targets.append((RESEARCH / "proto-demo.html", True, False))
-        if not only_proto:
-            targets.append((RESEARCH / "xray-demo.html", False, False))
-    if only_proto:
-        targets = [(RESEARCH / "proto-demo.html", True, False)]
-
-    for path, proto, new in targets:
-        html, scraped = build(data_json, proto=proto, new=new, data_src=src)
-        path.write_text(html, encoding="utf-8")
-        print(f"   {len(data):,} apartments -> {path.name}"
-              f"  (data scraped {scraped:%Y-%m-%d %H:%M})")
+    path = RESEARCH / "casita-demo.html"
+    html, scraped = build(data_json, data_src=src)
+    path.write_text(html, encoding="utf-8")
+    print(f"   {len(data):,} apartments -> {path.name}"
+          f"  (data scraped {scraped:%Y-%m-%d %H:%M})")
 
 
 if __name__ == "__main__":

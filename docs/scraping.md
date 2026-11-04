@@ -25,6 +25,12 @@ the session persists in `.chrome-profile/`. Later headed searches reuse that
 profile. Craigslist, Zumper, and Redfin have their own source-specific parsing
 paths.
 
+The current search area is downtown Chicago: River North, South Loop, West
+Loop, and Fulton Market. Source queries are scoped to that area and results
+are filtered by coordinates before they are saved. Live source URL and parser
+behavior can change independently of the offline demo; check each source
+adapter before relying on a live refresh.
+
 ## Ways This Could Go Further
 
 Scraping could gain better source isolation, clearer retry reporting, richer

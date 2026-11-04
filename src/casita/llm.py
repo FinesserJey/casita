@@ -61,7 +61,19 @@ class ExtractedFacts(BaseModel):
     yard_note: str | None = Field(None, description='One short line, e.g. "fenced backyard with grass".')
     dog_policy: Literal["large_ok", "dogs_ok", "small_only", "no_dogs"] | None = None
     parking: str | None = None
+    covered_parking: bool | None = Field(
+        None,
+        description="Whether the listing explicitly includes a covered parking space. A garage is covered; do not infer coverage from generic parking.",
+    )
     laundry: str | None = None
+    air_conditioning: bool | None = Field(
+        None,
+        description="Whether the unit explicitly has air conditioning. Do not infer from climate or building type.",
+    )
+    has_den: bool | None = Field(
+        None,
+        description="Whether the listing explicitly includes a den or separate office space.",
+    )
     vibe: str | None = Field(None, description="One short sentence on what makes this place distinctive.")
     warnings: str | None = Field(None, description="One line on red flags.")
 
@@ -76,8 +88,8 @@ class RankEntry(BaseModel):
         description=(
             "Severity flag. 'ok' = clean match, render green. "
             "'concerns' = rankable but has notable red flags (missing data, "
-            "no parking, no yard in SF, dated finishes, weight-cap with negotiation "
-            "needed, etc.) — render yellow. "
+            "unknown covered parking, shared laundry, or missing A/C details, etc.) "
+            "— render yellow. "
             "'filtered' = hard-gated out and should be dragged to the bottom — "
             "render red. INCLUDE filtered listings in the output so the user can "
             "see what got dropped and why."
@@ -94,7 +106,7 @@ class PrefContradiction(BaseModel):
         description="The exact line or phrase in the current ranking policy that the votes contradict."
     )
     revealed_behavior: str = Field(
-        description="What the votes actually show, with counts — e.g. '7 of 19 passes cite no trail/beach access'."
+        description="What the votes actually show, with counts — e.g. '7 of 19 passes cite a long walk to CTA'."
     )
     proposed_resolution: str = Field(
         description="A concrete proposed edit to that policy line reconciling it with revealed behavior. Specific text, not a vague direction."
@@ -221,145 +233,47 @@ class InteractionUpdate(BaseModel):
 
 
 _EXTRACT_SYSTEM = (
-    "You're reading a real-estate listing for a rental in the SF Bay Area. "
+    "You're reading a real-estate listing for a rental in downtown Chicago. "
     "Extract the requested fields. Be conservative — return null when unclear."
 )
 
 _RANK_SYSTEM = textwrap.dedent("""
-    You're ranking rental listings for a household looking in San Francisco
-    (Richmond / Sunset / Presidio-adjacent) or Marin (Mill Valley / Sausalito).
-    They have two large dogs, prefer 2-3 bedrooms, and value access to trails,
-    beaches, bakeries, and practical daily transportation.
+    Rank rental listings in downtown Chicago, primarily River North, South
+    Loop, West Loop, and Fulton Market. The renter prefers a one-bedroom,
+    ideally with a den/office, or a smaller two-bedroom to fit a large desk.
+    Pet-friendliness is not a ranking factor.
 
-    ── PRECEDENCE — how to resolve conflicting signals ──
-      • This prompt is settled policy, but the household's actual votes
-        (provided as PREFERENCE EXAMPLES before the listings, when present) are
-        the ground truth. Where an example conflicts with a SOFT policy line
-        here, follow the examples — they reflect the most current preference.
-      • HARD REQUIREMENTS below always win, even over examples (dog policy, etc.).
-      • When reviewer signals conflict, prefer the reviewer_a examples over
-        reviewer_b examples. reviewer_a is the primary preference signal.
+    HARD REQUIREMENTS:
+      - Explicitly no covered parking, no in-unit laundry, or no air
+        conditioning -> severity="filtered". Covered parking may be assigned
+        or unassigned; a garage is covered. Do not treat generic parking as
+        covered unless the listing says garage, covered, or carport.
+      - Unknown covered-parking, laundry, or AC status is NOT a failure:
+        keep the listing visible, mark severity="concerns", and name the
+        missing fact to verify.
+      - Keep records with missing price/bed count visible when the listing
+        otherwise looks real; call out the missing data.
 
-    ── HARD REQUIREMENTS — drop the listing from results if any fail ──
-      • Dog policy — the household has two large dogs. Hard rules:
-          - **no_dogs** → severity="filtered", drop to the bottom, reason
-            starts with "No dogs allowed".
-          - **small_only** → severity="concerns" ALWAYS, never "ok". Reason
-            MUST start with "Small dogs only — would need to negotiate"
-            because the badge says SMALL DOGS ONLY and the rank reason has
-            to match the badge. Never describe these as "dog-friendly".
-            They should not outrank a comparable dogs_ok / large_ok listing.
-          - **dogs_ok / large_ok** → eligible for severity="ok".
-          - **null/unknown** → severity="concerns", flag the verification need.
-      • For Marin listings: a private yard is strongly preferred
-        (fenced backyard, side yard, or private patio with grass). NEVER
-        hard-filter a Marin listing for yard alone — treat missing/
-        unknown yard data as severity="concerns" and flag for verification.
-        Only mark a Marin yard-less listing severity="filtered" if
-        ALL of these are true: (a) yard is explicitly false in the data,
-        AND (b) has_yard is the listing's primary problem (other factors
-        like pet policy aren't already disqualifying).
-      • Listings missing critical data like price or beds (showing as ? or 0)
-        should still be included if the title suggests it's a real listing —
-        flag the missing data in the reason.
+    RANKING PRIORITIES:
+      1. Walkability to CTA 'L' stations and lines is the main location
+         preference. Name the nearest station and minutes when supplied.
+      2. Prefer 1 bedroom; a den is a useful bonus. A compact 2-bedroom is
+         acceptable. Studios and 3+ bedroom units are poor fits.
+      3. Covered parking, confirmed in-unit laundry, and confirmed AC are
+         major positives. A listing that explicitly misses a hard requirement
+         must remain visible but be marked filtered.
+      4. River North, Fulton Market, West Loop, and South Loop are preferred,
+         in that order. Bath count is a secondary plus.
+      5. Walking access to Lake Michigan beaches is a nice-to-have, not a gate.
+      6. Close bakeries, restaurants, entertainment, shopping, and activities
+         are useful context, but do not outweigh the hard requirements.
 
-    ── STRONG REQUIREMENTS — heavy penalty if missing, not a hard gate ──
-      • Location must be in-scope: SF Inner/Outer Richmond, Inner/Outer Sunset,
-        Lake Street, Presidio Heights, Central Richmond/Sunset; OR Marin —
-        Mill Valley (incl. Tam Valley, Homestead Valley, Almonte) or Sausalito.
-      • Size: **≥120 m² (≈1,292 sqft) is the comfortable floor** for two adults
-        and two large dogs. Treat smaller sizes as significant penalty:
-          - 100–119 m² (1,076–1,292 sqft): tight, flag in reason
-          - <100 m² (<1,076 sqft): too small, downgrade hard or filter
-        If sqft is missing entirely, don't gate — flag as needs verification.
-      • In-unit laundry strongly preferred. "Shared in building" is acceptable;
-        hookups-only or none is a significant penalty.
-      • Parking on-site (garage, attached, off-street). Street-only is
-        workable in SF, but is a soft penalty.
-      • Trail OR beach access — REVEALED AS NEAR-MANDATORY. ~80% of the passes
-        so far cite "not walkable to a trail or beach," so treat this as a
-        strong requirement, not a tie-breaker: a listing that isn't within an
-        easy walk (SF) / short drive (Marin) of EITHER a trail or a beach gets
-        a heavy penalty → severity="concerns", ranked low. NOT a hard gate —
-        never "filtered"-drop on trail/beach distance alone. (Which specific
-        anchor — Baker, the Presidio gates, the Dipsea — still breaks ties; see
-        PREFERENCES.)
-      • Aesthetics is a SOFT tie-breaker, NOT a heavy penalty. The household
-        cares about design, but the votes are clear: location beats finishes. "It's
-        ugly but we can take a look" was an UP vote. Treat dated / low-end
-        finishes as a "concerns" flag at most — never rank a well-located place
-        low for looks alone, and never "filtered" on aesthetics.
-
-    ── DISTANCE MODES ──
-    The brief's "walks" field is prefixed with WALKING (SF) or DRIVING (Marin).
-    For SF listings, all times are WALKING — apply the bakery preference, etc.
-    For Marin/Mill Valley listings, all times are DRIVING — these are different
-    units. Don't penalize a Mill Valley listing for being "far" from SF anchors
-    when a 20-minute drive is normal there.
-
-    ── PREFERENCES — in priority order, used to break ties and shape ranking ──
-      (Trail/beach ACCESS is now a strong requirement above; #2/#3 here govern
-       how close and which anchor — they break ties among listings that qualify.)
-      1. Close to SF. For SF listings this means walking distance to Muni /
-         downtown. For Marin listings this means proximity to ferry service or
-         the Golden Gate Bridge.
-      2. Close to trail access. SF = Presidio gates (Arguello, Lyon, West
-         Pacific). Marin = Dipsea / Tennessee Valley / Headlands access.
-      3. Close to a beach. **Baker Beach is the preferred beach** — proximity
-         to Baker carries more weight than proximity to China or Ocean (and in
-         Marin, Muir / Stinson). When evaluating, look at the named anchor in
-         the brief; if it's Baker, that's a stronger positive.
-      4. Close to a bakery or cafe-with-pastries.
-         For SF listings: the bar is 4.7★ + 1,500+ reviews. Qualifying set:
-         Arsicault, Cinderella, b. patisserie, Arizmendi — all in SF.
-         **Arsicault is the preferred favorite** — proximity to Arsicault
-         carries more weight than the others.
-         For Marin listings: the bar is lower (4.5★+ / 100+ reviews) because
-         the market is smaller. Qualifying set: Bob's Donuts, Madrona,
-         Equator Coffees Mill Valley, Emporio Rulli Larkspur. Don't
-         over-penalize Marin listings on this dimension — driving is expected,
-         and the local options are real (just lower-volume).
-
-    ── ENGAGEMENT BOOST — listings where we're already in conversation ──
-      If the listing's status is one of: contacted, viewing_scheduled,
-      viewing_done, shortlist, applied — rank it higher than fresh listings
-      with similar facts. Conversations have momentum; protect that.
-      Exception: if status is declined_by_us or declined_by_landlord, the
-      listing is dead — leave it out.
-
-    ── SOFT BONUSES ──
-      • 3 bed > 2 bed
-      • Private yard (huge bonus in SF, very strong preference in Marin)
-      • In-unit laundry
-      • Garage parking
-      • Inner Richmond / Lake Street / Presidio Heights / Inner Sunset.
-      • Downtown Mill Valley walkability.
-
-    ── OUTPUT FORMAT ──
-    Return EVERY listing in the input — none dropped silently. Order best
-    first. Each entry has:
-      • key: the listing key
-      • reason: one short sentence with the load-bearing facts
-      • severity:
-          - "ok"       → A strong fit given SF rental realities. Calibrate
-                         to the market, not to an ideal:
-                           * Street parking is NORMAL in SF — not a concern.
-                           * Shared laundry-in-building is fine — not a concern.
-                           * No private yard in SF is the default — not a concern.
-                           * 1 bath in a 2-bed, or 1.5 bath in a 3-bed, is
-                             normal — not a concern.
-                         A 3BR/1.5BA Inner Richmond remodel with W/D and
-                         street parking IS as good as SF gets — that's "ok".
-          - "concerns" → Actual red flags worth pausing on:
-                           * Missing critical data (no price, no bed count)
-                           * Small-dogs-only or weight-cap (needs negotiation)
-                           * Visibly dated / cheap finishes / "needs work"
-                           * Out-of-scope neighborhood
-                           * Marin without yard data verified
-                           * Hookups-only or NO laundry at all
-          - "filtered" → Hard gate fail (no-dogs explicit, multi-unit
-                         building landing pages with no usable listing
-                         data) — sort to the bottom.
+    For every listing, return a short factual reason and severity ("ok",
+    "concerns", or "filtered"). Include every input listing; do not silently
+    omit any. Do not infer amenities from neighborhood, price, or building age.
+    Actual reviewer votes can break ties among otherwise eligible listings,
+    but cannot override the requirements above. Keep active CRM conversations
+    above fresh listings with comparable fit.
 """).strip()
 
 
@@ -471,8 +385,14 @@ def apply_facts(listing: Listing, facts: ExtractedFacts) -> None:
         listing.yard_note = facts.yard_note
     if not listing.parking and facts.parking:
         listing.parking = facts.parking
+    if facts.covered_parking is not None:
+        listing.covered_parking = facts.covered_parking
     if not listing.laundry and facts.laundry:
         listing.laundry = facts.laundry
+    if facts.air_conditioning is not None:
+        listing.air_conditioning = facts.air_conditioning
+    if facts.has_den is not None:
+        listing.has_den = facts.has_den
     if facts.dog_policy and not listing.dog_policy:
         listing.dog_policy = facts.dog_policy
     if not listing.description:
@@ -492,13 +412,14 @@ def _listing_brief(L: Listing, walk_summary: str, feedback: str = "") -> str:
         f"beds: {L.beds}, baths: {L.baths}",
         f"sqft: {L.sqft}" if L.sqft else "",
         f"hood: {L.hood}",
-        f"dog: {L.dog_policy}",
         f"parking: {L.parking}",
+        f"covered parking: {L.covered_parking}",
         f"laundry: {L.laundry}",
+        f"air conditioning: {L.air_conditioning}",
+        f"den: {L.has_den}",
         f"yard: {L.has_yard} ({L.yard_note})" if L.has_yard is not None else "yard: ?",
-        # walk_summary is always populated on the live ranking path (it starts
-        # with "WALKING (SF)" / "DRIVING (Marin)"); only the historical
-        # example briefs pass "" — drop the empty bit there.
+        # walk_summary is populated on the live ranking path; historical
+        # preference examples pass "".
         f"walks: {walk_summary}" if walk_summary else "",
     ]
     if L.description:
@@ -646,42 +567,47 @@ def rank_listings(
     if not listings:
         return {}
 
-    from .walk import BAKERIES, BEACHES, SF_CENTER, TRAILS, minutes_to, nearest, is_marin, populate_drive_for_marin
+    from .walk import (
+        ACTIVITIES,
+        BAKERIES,
+        BEACHES,
+        CTA_STATIONS,
+        ENTERTAINMENT,
+        RESTAURANTS,
+        SHOPPING,
+        nearest,
+        populate_drive_for_chicago,
+    )
 
-    drive_map = populate_drive_for_marin(listings)
+    drive_map = populate_drive_for_chicago(listings)
 
     def _walk_summary(L: Listing) -> str:
-        if is_marin(L) and drive_map:
-            # Marin: drive-time mode so the LLM doesn't see giant walking numbers
-            # for SF anchors and penalize Mill Valley unfairly.
-            def _best(anchors):
-                best = None
-                for a in anchors:
-                    m = drive_map.get((L.key, a.name))
-                    if m is None: continue
-                    if best is None or m < best[1]:
-                        best = (a, m)
-                return best
-            bits = ["DRIVING (Marin)"]
-            sf = drive_map.get((L.key, SF_CENTER[0].name))
-            if sf is not None: bits.append(f"{sf}m drive to SF")
-            t = _best(TRAILS)
-            if t: bits.append(f"{t[1]}m drive trail({t[0].short})")
-            b = _best(BEACHES)
-            if b: bits.append(f"{b[1]}m drive beach({b[0].short})")
-            ba = _best(BAKERIES)
-            if ba: bits.append(f"{ba[1]}m drive bakery({ba[0].short})")
-            return ", ".join(bits)
-        # SF: walking.
-        sf = minutes_to(walk_map, L.key, SF_CENTER[0])
-        np = nearest(walk_map, L.key, TRAILS)
-        nb = nearest(walk_map, L.key, BEACHES)
-        nba = nearest(walk_map, L.key, BAKERIES)
-        bits = ["WALKING (SF)"]
-        if sf is not None: bits.append(f"{sf}m walk SF")
-        if np: bits.append(f"{np[1]}m walk trail({np[0].short})")
-        if nb: bits.append(f"{nb[1]}m walk beach({nb[0].short})")
-        if nba: bits.append(f"{nba[1]}m walk bakery({nba[0].short})")
+        bits = []
+        for label, anchors in (
+            ("CTA", CTA_STATIONS),
+            ("beach", BEACHES),
+            ("bakery", BAKERIES),
+            ("entertainment", ENTERTAINMENT),
+            ("restaurant", RESTAURANTS),
+            ("shopping", SHOPPING),
+            ("activity", ACTIVITIES),
+        ):
+            item = nearest(walk_map, L.key, anchors)
+            if item:
+                walk_anchor, walk_minutes = item
+                bits.append(f"{walk_minutes}m walk {label}({walk_anchor.short})")
+                if walk_minutes > 20:
+                    drive = min(
+                        (
+                            (anchor, drive_minutes)
+                            for anchor in anchors
+                            if (drive_minutes := drive_map.get((L.key, anchor.name))) is not None
+                        ),
+                        key=lambda result: result[1],
+                        default=None,
+                    )
+                    if drive and drive[1] < walk_minutes:
+                        bits.append(f"{drive[1]}m drive {label}({drive[0].short})")
         return ", ".join(bits)
 
     feedback_map = _current_feedback(conn, [L.key for L in listings])
@@ -854,18 +780,15 @@ _SHARE_BLURB_SYSTEM = textwrap.dedent("""
       - Lead with what makes the place interesting OR what the red flag is.
       - Name the neighborhood explicitly.
       - Don't repeat the price (it's in the title).
-      - For listings with concerns (small-dog-only, no parking, dated finishes,
+      - For listings with concerns (no covered parking, shared laundry, no A/C,
         missing data) — be honest, name the issue.
-      - For strong matches — name the most distinctive feature (yard, walk to
-        Arsicault, in-unit laundry + Inner Richmond, etc.).
+      - For strong matches — name the most distinctive feature (covered parking,
+        a den, in-unit laundry, or a short walk to CTA).
 
     Examples:
-      "Spacious 3BR Inner Richmond flat with in-unit laundry and a fenced
-       backyard, 8 min walk to Arsicault."
-      "Stunning Mill Valley remodel near the Dipsea trail — but small dogs
-       only, will need landlord negotiation."
-      "Outer Sunset 2BR with no parking and dated finishes — passable
-       value at this price but better options exist."
+      "River North 1BR with a den, covered parking, and in-unit laundry."
+      "West Loop 1BR near CTA; parking coverage is not stated, so verify it."
+      "South Loop 2BR with A/C and a garage, but shared laundry."
 """).strip()
 
 

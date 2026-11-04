@@ -21,6 +21,10 @@ and the local demo can use Python's `http.server`. The preview images are 1200 x
 address, neighborhood, size, and key fit signals, captured with Playwright's
 local Chromium browser.
 
+The Chicago index also includes an approximate average asking-rent summary for
+the target neighborhoods, with listing counts. It is not a total-cost estimate:
+utilities and mandatory fees are not assumed to be zero.
+
 ## Ways This Could Go Further
 
 Static rendering could be split into smaller template units, given focused

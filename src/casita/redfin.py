@@ -6,11 +6,10 @@ persistent Playwright profile (`.chrome-profile`) — a captcha cleared once via
 the listing cards into the page (the data is NOT in an XHR), so we parse the
 `bp-Homecard` DOM directly, the way craigslist/zillow do.
 
-Search is city/zip-scoped rather than neighborhood-scoped (neighborhood URLs
-need region ids that drift), so we run a city-wide SF search plus a Mill Valley
-zip search. Cards expose the street address + zip but not lat/lng, so the hood
-stays coarse (`san-francisco` / `mill-valley`); walk.py geocodes the address
-downstream for the fine-grained location.
+Search is zip-scoped rather than neighborhood-scoped (neighborhood URLs need
+region ids that drift). These downtown Chicago ZIPs overlap the target
+neighborhoods; coordinates are used to resolve the finer neighborhood where
+Redfin's JSON-LD provides them.
 """
 import json
 import re
@@ -20,23 +19,28 @@ from playwright.async_api import BrowserContext
 from .geo import resolve_neighborhood
 from .models import Listing
 
-# Redfin rental search URLs. Filters live in the `/filter/` path segment:
-# 2-3 beds, dog-friendly. City id 17151 = San Francisco.
+# Redfin rental search URLs. The downtown ZIPs cover the target neighborhoods.
+# Filters live in the `/filter/` path segment: 1-2 bedrooms.
 SEARCHES = [
     (
-        "san-francisco",
-        "https://www.redfin.com/city/17151/CA/San-Francisco/apartments-for-rent/"
-        "filter/min-beds=2,max-beds=3,pets-allowed=dogs",
+        "River North",
+        "https://www.redfin.com/zipcode/60654/apartments-for-rent/"
+        "filter/min-beds=1,max-beds=2",
     ),
     (
-        "mill-valley",
-        "https://www.redfin.com/zipcode/94941/apartments-for-rent/"
-        "filter/min-beds=2,max-beds=3,pets-allowed=dogs",
+        "South Loop",
+        "https://www.redfin.com/zipcode/60605/apartments-for-rent/"
+        "filter/min-beds=1,max-beds=2",
     ),
     (
-        "sausalito",
-        "https://www.redfin.com/zipcode/94965/apartments-for-rent/"
-        "filter/min-beds=2,max-beds=3,pets-allowed=dogs",
+        "West Loop",
+        "https://www.redfin.com/zipcode/60607/apartments-for-rent/"
+        "filter/min-beds=1,max-beds=2",
+    ),
+    (
+        "Fulton Market",
+        "https://www.redfin.com/zipcode/60661/apartments-for-rent/"
+        "filter/min-beds=1,max-beds=2",
     ),
 ]
 
@@ -164,8 +168,8 @@ def _record_to_listing(rec: dict, area: str, geo_idx: dict[str, dict]) -> Listin
 
     geo = geo_idx.get(_url_path(url), {})
     lat, lng = geo.get("lat"), geo.get("lng")
-    # Prefer the JSON-LD structured street address (clean "39 Bruton St, San
-    # Francisco"); fall back to the DOM card text, stripping the "Building |"
+    # Prefer the JSON-LD structured street address; fall back to the DOM card
+    # text, stripping the "Building |"
     # prefix buildings carry.
     addr = geo.get("street")
     if not addr:
@@ -188,12 +192,6 @@ def _record_to_listing(rec: dict, area: str, geo_idx: dict[str, dict]) -> Listin
         sqft=int(sqft_v) if sqft_v else None,
         image_url=image_url,
         photos=[image_url] if image_url else [],
-        pets_allowed=True,  # we filtered for pets-allowed=dogs
-        # Same reasoning as zumper: the search already asked for dog-friendly,
-        # so `dogs_ok` is known and the size rule is not. Leaving this None
-        # threw away a fact the URL had already established, and made every
-        # Redfin listing look unvetted next to a Craigslist one.
-        dog_policy="dogs_ok",
         lat=lat,
         lng=lng,
         raw=rec,

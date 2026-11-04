@@ -77,21 +77,10 @@ function curve(v, pts) {
 const FACTORS = (() => {
   "use strict";
 
-  /* ---------- coverage-corrected street percentiles ----------
-     A percentile built on almost no reports is not a record, it is a blank
-     page. Five percent of listings sit near fewer than ~90 total street
-     reports against a city median of 1,082, and they swept the top of every
-     safety-first ranking purely by having nothing on file. So a thin
-     percentile gets pulled toward the middle in proportion to how thin it is. */
-  const streetCoverage = (a) => {
-    const s = a.street || {};
-    return (s.violent || 0) + (s.break_in || 0) + (s.encampment || 0) + (s.cleaning || 0);
-  };
+  /* City report layers are inspectable context, not a combined safety score. */
   function streetPct(a, k) {
     const v = (a.street_pct || {})[k];
-    if (v == null) return null;
-    const t = cl(streetCoverage(a) / 300, 0, 1);
-    return v * t + 45 * (1 - t);
+    return v == null ? null : v;
   }
 
   // Ratings shrink toward the city mean until enough people have spoken.
@@ -173,49 +162,22 @@ const FACTORS = (() => {
   const REG = {
 
     quiet: {
-      label: "Quiet nights", icon: "moon", tab: "quiet", quizzable: true,
+      label: "Quiet nights", icon: "moon", tab: null, quizzable: false,
       // night_pct is the share of 311 noise reports on this block landing
       // between 22:00 and 05:00. Every listing has it; the sound score does
       // not, so it refines rather than decides.
-      raw(a) {
-        const night = 100 - cl(a.night_pct ?? 33, 0, 100);
-        const snd = (a.scores || {}).sound;
-        const late = 100 - cl((a.late || 0) * 9, 0, 60);
-        return snd == null ? night * 0.75 + late * 0.25
-                           : night * 0.55 + (100 - snd) * 0.25 + late * 0.20;
-      },
-      conf: (a) => (a.scores || {}).sound != null ? 0.9 : 0.65,
-      why: (a) => a.late
-        ? `Quiet after 10 PM - ${a.late} venue${a.late === 1 ? "" : "s"} licensed late nearby`
-        : "Quiet after 10 PM",
-      but: (a) => `Busier after dark than most blocks in your search`,
+      raw: () => null,
+      conf: () => 0,
+      why: () => "No Chicago noise dataset is loaded",
+      but: () => "No Chicago noise dataset is loaded",
     },
 
     street: {
-      label: "Safety", icon: "shield", tab: "street", quizzable: true,
-      /* Deliberately NOT a safety score. Four separate city datasets, grouped
-         for navigation and inspectable underneath.
-
-         The mix is weighted toward crime. A car break-in is a thing that
-         happens TO you and costs you a window and a laptop; an encampment
-         report is a 311 call about the condition of a street, and it is as
-         often a report about someone else's hardship as about any risk to the
-         person reporting it. Treating those as comparable overweighted the
-         complaint and underweighted the theft. Crime now carries four fifths
-         of this number, split fairly evenly between violence and break-ins,
-         because break-ins are the far likelier thing to actually happen. */
-      raw(a) {
-        const vi = streetPct(a, "violent"), br = streetPct(a, "break_in");
-        const en = streetPct(a, "encampment"), cle = streetPct(a, "cleaning");
-        if (vi == null && br == null) return null;
-        const v = vi ?? br, b = br ?? vi;
-        const crime = 100 - (v * 0.55 + b * 0.45);
-        const upkeep = 100 - ((en ?? 45) * 0.7 + (cle ?? 45) * 0.3);
-        return crime * 0.8 + upkeep * 0.2;
-      },
-      conf: (a) => cl(streetCoverage(a) / 400, 0.35, 1),
-      why: () => "This block reports fewer incidents than most",
-      but: () => "This block reports more incidents than most",
+      label: "Chicago report context", icon: "shield", tab: "street", quizzable: false,
+      raw: () => null,
+      conf: () => 0,
+      why: () => "City reports are shown as separate layers, not a safety score",
+      but: () => "City reports are shown as separate layers, not a safety score",
     },
 
     cost: {
@@ -271,24 +233,12 @@ const FACTORS = (() => {
 
     management: {
       label: "Good management", icon: "wrench", tab: "residents", quizzable: true,
-      // The city inspects every building in SF, so a clean record is real
-      // evidence — but a clean record on four units says far less than a clean
-      // record on two hundred, because there was less to go wrong.
       raw(a) {
-        if (!a.parcel_ok) return null;
-        const units = Math.max(1, a.units || 1);
-        let v = 100 - cl((a.novs || 0) / units / 1.5, 0, 1) * 100;
-        v -= cl((a.active || 0) / 8, 0, 1) * 22;
-        v -= cl((a.over_year || 0) / 6, 0, 1) * 22;
-        if (a.referred > 0) v -= 15;
-        return cl(v, 0, 100);
+        return null;
       },
-      conf: (a) => a.parcel_ok ? cl(Math.log2((a.units || 1) + 1) / 7, 0.2, 0.9) : 0,
-      why: (a) => a.active ? "Open repair cases are few for its size"
-                           : "No open repair cases on the city's record",
-      but: (a) => a.over_year
-        ? `${a.over_year} violation${a.over_year === 1 ? "" : "s"} took over a year to close`
-        : `${num(a.novs)} violations on file across ${num(a.units)} units`,
+      conf: () => 0,
+      why: () => "Chicago building records are not integrated",
+      but: () => "Chicago building records are not integrated",
     },
 
     residents: {
@@ -328,17 +278,17 @@ const FACTORS = (() => {
         const w = (a.scores || {}).walk;
         // Everyday-errand density is the fallback, and it is what a walk score
         // is measuring anyway.
-        const d = GEO.countWithin(a, ["grocery", "cafe", "restaurant", "pharmacy"], 800);
+        const d = GEO.countWithin(a, ["grocery", "cafe", "restaurant", "bakery", "pharmacy"], 800);
         const byDensity = curve(d, [[2, 25], [10, 60], [30, 85], [70, 100]]);
         return w == null ? byDensity : w * 0.6 + byDensity * 0.4;
       },
       conf: (a) => (a.scores || {}).walk != null ? 0.9 : 0.7,
-      why: (a) => `${GEO.countWithin(a, ["grocery", "cafe", "restaurant"], 800)} everyday places within a 10-min walk`,
+      why: (a) => `${GEO.countWithin(a, ["grocery", "cafe", "restaurant", "bakery"], 800)} everyday places within a 10-min walk`,
       but: () => "Fewer everyday places in walking distance",
     },
 
     nightlife: {
-      label: "Nightlife", icon: "wine", tab: "quiet", quizzable: true,
+      label: "Nightlife", icon: "wine", tab: "walks", quizzable: true,
       raw(a) {
         const bars = GEO.countWithin(a, ["bar", "club", "music"], 800);
         return curve(bars, [[0, 0], [2, 35], [6, 68], [15, 90], [30, 100]]);
@@ -349,6 +299,39 @@ const FACTORS = (() => {
         return `${b} bar${b === 1 ? "" : "s"} and venue${b === 1 ? "" : "s"} within a 10-min walk`;
       },
       but: () => "Little going on within walking distance at night",
+    },
+
+    bakery: {
+      label: "Bakery access", icon: "coffee", tab: "walks", quizzable: true,
+      raw: (a) => curve(GEO.countWithin(a, "bakery", 800), [[0, 0], [1, 55], [3, 85], [7, 100]]),
+      conf: () => 0.75,
+      why: (a) => `${GEO.countWithin(a, "bakery", 800)} bakeries within an 800m walk`,
+      but: () => "Few bakeries within walking distance",
+    },
+
+    dining: {
+      label: "Restaurant access", icon: "wine", tab: "walks", quizzable: true,
+      raw: (a) => curve(GEO.countWithin(a, "restaurant", 800), [[0, 0], [5, 45], [20, 80], [50, 100]]),
+      conf: () => 0.8,
+      why: (a) => `${GEO.countWithin(a, "restaurant", 800)} restaurants within an 800m walk`,
+      but: () => "Few restaurants within walking distance",
+    },
+
+    culture: {
+      label: "Arts & entertainment", icon: "star", tab: "walks", quizzable: true,
+      raw: (a) => curve(GEO.countWithin(a, ["cinema", "theatre", "music", "gallery", "arcade"], 1600),
+        [[0, 0], [1, 45], [4, 80], [10, 100]]),
+      conf: () => 0.7,
+      why: (a) => `${GEO.countWithin(a, ["cinema", "theatre", "music", "gallery", "arcade"], 1600)} venues within 1.6km`,
+      but: () => "Few arts and entertainment venues nearby",
+    },
+
+    shopping: {
+      label: "Shopping access", icon: "cart", tab: "walks", quizzable: true,
+      raw: (a) => curve(GEO.countWithin(a, "shopping", 800), [[0, 0], [2, 50], [8, 85], [20, 100]]),
+      conf: () => 0.7,
+      why: (a) => `${GEO.countWithin(a, "shopping", 800)} shops within an 800m walk`,
+      but: () => "Few mapped shops within walking distance",
     },
 
     grocery: {
@@ -433,11 +416,9 @@ const FACTORS = (() => {
         else if (photos === 1) v -= 9;
         else v += 9;
         if (a.photo_reuse) v -= 22;                  // same pictures, other address
-        if (!a.parcel_ok) v -= 16;                   // no such building on the map
         if (underpriced(a)) v -= 30;                 // too good to be true
         if ((a.src || []).length > 1) v += 12;       // two sources agree it exists
         if (a.est === "verified") v += 5;
-        if (a.landlord && a.landlord.conf === "registered") v += 8;
         if (isPlan(a)) v -= 14;          // a plan is not a vacancy
         if (a.avail === "live") v += 7;
         else if (a.avail === "gone" || a.avail === "no_units") v -= 22;
@@ -453,12 +434,11 @@ const FACTORS = (() => {
       conf: () => 0.9,
       why: (a) => (a.src || []).length > 1
         ? `Listed on ${a.src.length} sites that agree on the address`
-        : "Address matches a real building on the city parcel map",
+        : "The listing is supported by the available source details",
       but(a) {
         if (!(a.photos || []).length) return "No photos on the listing - we can't see the unit";
         if (underpriced(a)) return "Priced well under the going rate for its size - verify before paying anything";
         if (a.photo_reuse) return "Some of these photos appear on another address";
-        if (!a.parcel_ok) return "This address didn't match a building on the parcel map";
         return "Little independent confirmation this listing is genuine";
       },
     },
@@ -701,6 +681,7 @@ const FACTORS = (() => {
   const AMEN_MATCH = {
     ac:         /air condition/i,
     wd:         /washer\/dryer/i,
+    covered_parking: /covered parking|garage|carport/i,
     dishwasher: /dishwasher/i,
     outdoor:    /patio|balcony|deck/i,
     furnished:  /furnished/i,
@@ -708,8 +689,8 @@ const FACTORS = (() => {
   };
   const AMEN_LABEL = {
     ac: "A/C", wd: "In-unit laundry", dishwasher: "Dishwasher",
+    covered_parking: "Covered parking",
     outdoor: "Outdoor space", furnished: "Furnished", storage: "Storage",
-    pets: "Pet-friendly", rc: "Rent-controlled",
   };
 
   function requirements(a, P) {
@@ -740,25 +721,19 @@ const FACTORS = (() => {
       }
     }
     for (const k of P.must || []) {
-      if (k === "pets") {
-        // Apartments.com publishes no "not allowed" value at all, and an
-        // unticked Craigslist box means the poster skipped a checkbox. Neither
-        // source can produce a confident refusal, so a pet requirement can be
-        // unknown but never failed.
-        if (!a.pet) say("unknown", k, "No pet policy published - ask before you view");
-        else if (a.pet.ok) say("ok", k, a.pet.monthly ? `Pets OK - ${money(a.pet.monthly)}/mo pet rent` : "Pets allowed");
-        else say("unknown", k, "This post doesn't say pets are OK - worth confirming");
-        continue;
-      }
-      if (k === "rc") {
-        if (a.rc === "yes") say("ok", k, "Likely rent-controlled");
-        else if (a.rc === "no") say("fail", k, "City records say this building is not rent-controlled");
-        else say("unknown", k, "Rent-control status is unclear for this building");
-        continue;
-      }
       if (k === "wd" && a.wd != null) { // an explicit field beats the amenity list
         if (a.wd) say("ok", k, "In-unit washer/dryer");
         else say("unknown", k, "No in-unit laundry mentioned - worth confirming");
+        continue;
+      }
+      if (k === "ac" && a.ac != null) {
+        if (a.ac) say("ok", k, "Air conditioning confirmed");
+        else say("fail", k, "Listing explicitly says there is no air conditioning");
+        continue;
+      }
+      if (k === "covered_parking" && a.covered_parking != null) {
+        if (a.covered_parking) say("ok", k, "Covered parking confirmed");
+        else say("fail", k, "Listing explicitly says there is no covered parking");
         continue;
       }
       const re = AMEN_MATCH[k];
@@ -779,21 +754,6 @@ const FACTORS = (() => {
      about a named person or company. */
   function anomalies(a) {
     const out = [];
-    const perUnit = (a.novs || 0) / Math.max(1, a.units || 1);
-    if (perUnit > 1.5)
-      out.push({ text: `${num(a.novs)} building violations across ${num(a.units)} units`, src: "SF DBI complaints" });
-    if ((a.over_year || 0) > 3)
-      out.push({ text: `${a.over_year} violations here took over a year to close`, src: "SF DBI complaints" });
-    if (a.referred > 0)
-      out.push({ text: "The city escalated a case here to the City Attorney", src: "SF DBI referrals" });
-    // `key` names the panel that can show the reader the same records this
-    // sentence was derived from, so a claim about a block can be checked
-    // against the map of that block instead of being taken on faith.
-    const vi = streetPct(a, "violent"), br = streetPct(a, "break_in");
-    if (vi >= 88)
-      out.push({ text: `Assaults and robberies nearby busier than ${Math.round(vi)}% of listings`, src: "SFPD incident reports", key: "street" });
-    else if (br >= 90)
-      out.push({ text: `Car break-ins nearby busier than ${Math.round(br)}% of listings`, src: "SFPD incident reports", key: "street" });
     if (a.rating != null && a.rating < 3 && (a.rating_n || 0) >= 3)
       out.push({ text: `Rated ${a.rating}/5 by ${num(a.rating_n)} reviewers`, src: a.rating_src || "reviews", key: "residents" });
     if (a.shared)

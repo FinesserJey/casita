@@ -1,4 +1,4 @@
-"""Craigslist SF via the site's own JSON API.
+"""Craigslist Chicago via the site's own JSON API.
 
 The Apify actor stalled around 200 items per run because it crawls detail pages
 and gets throttled. This uses the endpoint the website itself calls.
@@ -21,7 +21,7 @@ def call(path, lo=None, hi=None):
     if hi is not None: p["max_price"] = hi
     req = urllib.request.Request(BASE + "?" + urllib.parse.urlencode(p), headers={
         "User-Agent": UA, "Accept": "application/json",
-        "Referer": "https://sfbay.craigslist.org/"})
+        "Referer": "https://chicago.craigslist.org/"})
     for a in range(4):
         try:
             with urllib.request.urlopen(req, timeout=60) as h:
@@ -78,8 +78,8 @@ def parse(data):
             "id": str(pid), "price": price, "latitude": lat, "longitude": lon,
             "location": hood, "title": title, "bedrooms": beds, "sqft": sqft,
             "posted": posted,
-            "url": (f"https://sfbay.craigslist.org/sfc/apa/d/{slug}/{pid}.html"
-                    if slug else f"https://sfbay.craigslist.org/d/{pid}.html"),
+            "url": (f"https://chicago.craigslist.org/chc/apa/d/{slug}/{pid}.html"
+                    if slug else f"https://chicago.craigslist.org/d/{pid}.html"),
             "pics": [f"https://images.craigslist.org/{i.split(':')[-1]}_300x300.jpg"
                      for i in imgs[:5] if ":" in i],
             "mapAccuracy": 22 if lat else 0})
@@ -115,14 +115,14 @@ def harvest(path, lo, hi, depth=0, seen=None, out=None):
 
 if __name__ == "__main__":
     seen, rows = set(), []
-    for path in ["sfc/apa", "sfc/roo"]:
+    for path in ["chc/apa", "chc/roo"]:
         print(f"\n=== {path}")
         harvest(path, 0, 30000, 0, seen, rows)
-    insf = [r for r in rows if r["latitude"] and r["price"]
-            and 37.70 <= r["latitude"] <= 37.84
-            and -122.52 <= r["longitude"] <= -122.35]
+    inchicago = [r for r in rows if r["latitude"] and r["price"]
+                 and 41.84 <= r["latitude"] <= 41.92
+                 and -87.68 <= r["longitude"] <= -87.58]
     print(f"\nunique postings fetched:   {len(rows):,}")
-    print(f"in SF with coords + price: {len(insf):,}")
-    print(f"  with photos: {sum(1 for r in insf if r['pics']):,}"
-          f"   with beds: {sum(1 for r in insf if r['bedrooms'] is not None):,}")
-    json.dump(insf, open("craigslist_api.json", "w"))
+    print(f"downtown Chicago with coords + price: {len(inchicago):,}")
+    print(f"  with photos: {sum(1 for r in inchicago if r['pics']):,}"
+          f"   with beds: {sum(1 for r in inchicago if r['bedrooms'] is not None):,}")
+    json.dump(inchicago, open("craigslist_api.json", "w"))

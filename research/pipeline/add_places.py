@@ -10,7 +10,7 @@ stored here. The browser holds them, the same way it holds search memory.
 """
 import collections, json, sqlite3, sys, time, urllib.parse, urllib.request
 
-BBOX = "37.70,-122.53,37.84,-122.34"
+BBOX = "41.83,-87.70,41.93,-87.58"
 MIRRORS = ["https://overpass-api.de/api/interpreter",
            "https://overpass.kumi.systems/api/interpreter"]
 
@@ -21,24 +21,27 @@ QUERIES = {
                    node["amenity"="gym"]({BBOX});
                    way["leisure"="fitness_centre"]({BBOX});""",
     "transit": f"""node["railway"="station"]({BBOX});
+                   way["railway"="station"]({BBOX});
                    node["railway"="tram_stop"]({BBOX});
                    node["station"="subway"]({BBOX});""",
     "cafe":    f"""node["amenity"="cafe"]({BBOX});""",
+    "bakery":  f"""node["shop"="bakery"]({BBOX});
+                   way["shop"="bakery"]({BBOX});""",
     "park":    f"""way["leisure"="park"]({BBOX});""",
     "pharmacy": f"""node["amenity"="pharmacy"]({BBOX});""",
-    # Going out, split by what you'd actually be doing.
-    #
-    # These exist because the city's entertainment permits -- the other source
-    # of nightlife in this project -- do not mean what the name suggests.
-    # "Extended Hours Premises" is a licence to trade late, and it is held by
-    # Silvercrest Donuts, The Mosser Hotel and SOMArts Cultural Center as
-    # readily as by a club. "Limited Live Performance" covers Fior d'Italia and
-    # a charitable foundation. Scoring a party block off those alone put donut
-    # shops in the numerator. OSM says bar when it means bar.
     "bar":     f"""node["amenity"~"^(bar|pub)$"]({BBOX});""",
     "club":    f"""node["amenity"="nightclub"]({BBOX});""",
-    "music":   f"""node["amenity"="music_venue"]({BBOX});
-                   node["amenity"="theatre"]({BBOX});""",
+    "music":   f"""node["amenity"="music_venue"]({BBOX});""",
+    "theatre": f"""node["amenity"="theatre"]({BBOX});
+                   way["amenity"="theatre"]({BBOX});""",
+    "cinema":  f"""node["amenity"="cinema"]({BBOX});
+                   way["amenity"="cinema"]({BBOX});""",
+    "gallery": f"""node["tourism"="gallery"]({BBOX});
+                   way["tourism"="gallery"]({BBOX});""",
+    "arcade":  f"""node["leisure"="amusement_arcade"]({BBOX});
+                   way["leisure"="amusement_arcade"]({BBOX});""",
+    "shopping": f"""node["shop"~"^(mall|department_store|clothes|books|shoes)$"]({BBOX});
+                    way["shop"~"^(mall|department_store)$"]({BBOX});""",
     "restaurant": f"""node["amenity"="restaurant"]({BBOX});""",
 }
 
@@ -90,10 +93,9 @@ for kind, body in QUERIES.items():
         # transit that is really a rail stop, so the label can say which network
         if kind == "transit":
             net = t.get("network") or t.get("operator") or ""
-            brand = ("BART" if "BART" in net.upper() else
-                     "Caltrain" if "caltrain" in net.lower() else
-                     "Muni" if "muni" in net.lower() or t.get("railway") == "tram_stop"
-                     else brand)
+            brand = ("CTA" if "cta" in net.lower() else
+                     "Metra" if "metra" in net.lower() else
+                     "CTA" if t.get("station") == "subway" else brand)
         rows.append((kind, name, brand, float(lat), float(lon)))
     was = before.get(kind, 0)
     # Both halves of the old test needed a non-zero `was`, so on a rebuilt or

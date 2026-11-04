@@ -282,7 +282,7 @@ function inView(a){
    Encampment stays at zero. Those reports measure who calls 311 as much as what
    is on the street, and ranking homes down for them would bake that in quietly.
    ============================================================ */
-const W = { value:2, reviews:2, building:2, crime:1, quiet:0, rc:1, encampment:0 };
+const W = { value:2, reviews:2, building:0, crime:0, quiet:0, rc:0, graffiti:0 };
 let SORT = "match";   // becomes "fit" once the quiz is filled in
 
 // A 5.0 from one reviewer is not better than a 4.3 from two hundred. Pull every
@@ -363,19 +363,11 @@ function parts(a){
   p.value = rentPct(a);
   const sr = shrunkRating(a);
   p.reviews = sr === null ? null : cl((sr - 2.5) / 2.0, 0, 1);
-  if (a.parcel_ok){
-    const perUnit = (a.novs || 0) / Math.max(1, a.units || 1);
-    let b = 1 - cl(perUnit / 1.5, 0, 1);
-    b -= cl((a.active || 0) / 8, 0, 0.25);
-    b -= cl((a.over_year || 0) / 6, 0, 0.25);
-    if (a.referred > 0) b -= 0.15;
-    p.building = cl(b, 0, 1);
-  } else p.building = null;
-  const br = spct(a, "break_in"), vi = spct(a, "violent"), en = spct(a, "encampment");
-  p.crime = br == null ? null : 1 - ((br + (vi ?? br)) / 2) / 100;
-  p.encampment = en == null ? null : 1 - en / 100;
-  p.quiet = 1 - cl(barsNear(a) / 45, 0, 1);
-  p.rc = a.rc === "yes" ? 1 : a.rc === "no" ? 0 : 0.4;
+  p.building = null;
+  p.crime = null;
+  p.graffiti = null;
+  p.quiet = null;
+  p.rc = null;
   return p;
 }
 
@@ -431,7 +423,7 @@ const SORTS = {
   match:  (x,y) => (matchScore(y).score ?? -1) - (matchScore(x).score ?? -1),
   rent:   (x,y) => x.rent - y.rent,
   rating: (x,y) => (shrunkRating(y) ?? 0) - (shrunkRating(x) ?? 0),
-  calm:   (x,y) => (spct(x,"break_in") ?? 100) - (spct(y,"break_in") ?? 100),
+  calm:   (x,y) => (spct(x,"vehicle_theft") ?? 100) - (spct(y,"vehicle_theft") ?? 100),
   fresh:  (x,y) => (stateOf(x)==="New to you"?0:1) - (stateOf(y)==="New to you"?0:1) || x.rank - y.rank,
 };
 /* Same building, different unit. Five ads for 1222 Harrison St in a row is not a
@@ -953,10 +945,9 @@ function drawTiles(){
    median cell at alpha 0.13 -- invisible. Normalising against p90 instead means
    a typical block actually reads, and the handful of extreme cells clip. */
 const RAMP = {
-  encampment: [[254,243,199],[252,191,73],[234,120,48],[157,44,32]],
-  break_in:   [[237,233,247],[178,164,216],[136,86,167],[77,26,110]],
+  graffiti:   [[236,242,236],[168,199,171],[100,150,120],[38,86,74]],
+  vehicle_theft: [[237,233,247],[178,164,216],[136,86,167],[77,26,110]],
   violent:    [[254,232,224],[250,160,130],[225,80,70],[140,20,30]],
-  cleaning:   [[236,242,236],[168,199,171],[100,150,120],[38,86,74]],
 };
 const heatBuf = document.createElement("canvas");
 let normCache = {};
@@ -1010,10 +1001,9 @@ function drawHeat(cells, ramp){
 }
 
 const LAYER_TXT = {
-  encampment: ["Encampment reports", "311 reports per ~90m block, last 12 months"],
-  break_in:   ["Car break-ins & vehicle theft", "Police incidents per ~90m block, last 12 months"],
-  violent:    ["Assault, robbery & sex offenses", "Police incidents per ~90m block, last 12 months"],
-  cleaning:   ["Street cleaning requests", "311 requests per ~90m block, last 12 months"],
+  graffiti: ["Graffiti removal requests", "311 reports per approximate 250m area, last 12 months"],
+  vehicle_theft: ["Motor vehicle theft reports", "CPD block-level reports per approximate 250m area, last 12 months"],
+  violent: ["Violent-crime reports", "CPD block-level reports per approximate 250m area, last 12 months"],
 };
 function legendHide(){ const el=document.getElementById("maplegend"); if(el) el.hidden=true; }
 function legend(){
@@ -1034,7 +1024,7 @@ function legend(){
 
 /* The drawer's own small map. Same tiles and same heat renderer as the big one,
    locked to this address so the numbers underneath have a picture attached. */
-let dLayer = "encampment", dApt = null;
+let dLayer = "graffiti", dApt = null;
 function drawDrawerMap(){
   const c = document.getElementById("dmap");
   if (!c || !dApt) return;
@@ -1580,16 +1570,16 @@ function openDrawer(a, jump){
           Reports filed within 250m in the last 12 months, and where that sits
           against every other listing in this search.</p>
         <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-          ${[["encampment","Encampments"],["break_in","Break-ins"],
-             ["violent","Violent"],["cleaning","Cleaning"]].map(([k,l],i)=>
+          ${[["graffiti","Graffiti"],["vehicle_theft","Vehicle theft"],
+             ["violent","Violent"]].map(([k,l],i)=>
             `<button class="dlayer${i?"":" on"}" data-dlayer="${k}">${l}</button>`).join("")}
         </div>
         <canvas id="dmap" style="width:100%;height:190px;border-radius:9px;
           border:1px solid var(--line);display:block"></canvas>
         <p style="font-size:11.5px;color:var(--ink-3);margin:6px 0 14px">
           The circle is 250m around this address — the area the counts below cover.</p>
-        ${[["encampment","Encampment reports"],["break_in","Car break-ins &amp; vehicle theft"],
-           ["violent","Assault, robbery &amp; sex offenses"],["cleaning","Street cleaning requests"]]
+        ${[["graffiti","Graffiti removal requests"],["vehicle_theft","Motor vehicle theft reports"],
+           ["violent","Violent-crime reports"]]
           .map(([k,label])=>{
             const v=(a.street||{})[k], pct=Math.round(spct(a,k) ?? 0);
             if (v==null) return "";
@@ -1623,9 +1613,9 @@ function openDrawer(a, jump){
                  these percentiles are pulled toward the middle before they count.</p>` : "";
         })()}
         <div class="recbox" style="margin-top:12px">
-          These are four separate things, not one score. A block with car break-ins and a
-          block with encampment reports are different problems — and a report is a report,
-          not a conviction or a measure of who lives there.
+          These are separate report layers, not one score. CPD locations are published at
+          block level, may change as reports are investigated, and are aggregated here
+          approximately; reports are not convictions or a measure of who lives there.
         </div>
         <p style="font-size:11.5px;color:var(--ink-3);margin-top:9px">
           311 Cases · vw6y-z8j6 &nbsp;·&nbsp; Police incidents · wg3w-h783 · last 12 months</p>

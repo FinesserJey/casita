@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a walkable street graph for San Francisco, small enough to ship.
+"""Build a walkable street graph for downtown Chicago, small enough to ship.
 
 Every route this product used to draw was invented. The commute lines bent
 along a formula that approximated the street grid, and the walk loops placed
@@ -12,10 +12,10 @@ This replaces the formula with the actual footways.
 On where the data comes from: the first version of this file asked Overpass for
 twenty-five tiles and grew three mirrors, a retry ladder and a disk cache
 trying to survive the throttling. It still died at tile 15 with every mirror
-refusing, twice, and it quietly cached two empty responses as though the
-Mission and the Sunset had no streets in them. That is a great deal of
+refusing, twice, and it quietly cached two empty responses as though whole
+neighborhoods had no streets in them. That is a great deal of
 machinery for downloading a map somebody already publishes as one file. BBBike
-cuts a San Francisco extract nightly, it is 72MB gzipped, it arrives in one
+cuts a Chicago extract nightly, it arrives in one
 request, and nobody rate-limits it.
 
 Size is the other problem. The raw geometry is around half a million vertices,
@@ -28,7 +28,7 @@ real bend of the street -- it *is* the street -- while the search space
 collapses to junctions.
 
 Coordinates quantise to 1e-5 degrees, about a metre, finer than any pin here is
-worth, and every SF coordinate then fits in a uint16 offset.
+worth, and every coordinate in the Chicago target box then fits in a uint16 offset.
 
     python3 build_walk_graph.py          -> walk_graph.json
 """
@@ -38,14 +38,15 @@ import json
 import math
 import os
 import pathlib
+import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 
-EXTRACT_URL = "https://download.bbbike.org/osm/bbbike/SanFrancisco/SanFrancisco.osm.gz"
-EXTRACT = pathlib.Path("sf.osm.gz")
+EXTRACT_URL = "https://download.bbbike.org/osm/bbbike/Chicago/Chicago.osm.gz"
+EXTRACT = pathlib.Path("chicago.osm.gz")
 
-# The city proper. The extract covers more of the peninsula than we rank in.
-S, W, N, E = 37.700, -122.525, 37.842, -122.350
+# Covers River North, West Loop, Fulton Market, and South Loop.
+S, W, N, E = 41.840, -87.680, 41.920, -87.580
 QUANT = 1e-5
 
 # What a person on foot can actually use. Motorways and their slip roads are
@@ -70,7 +71,7 @@ def download():
     if EXTRACT.exists() and EXTRACT.stat().st_size > 1_000_000:
         print(f"using cached {EXTRACT} ({EXTRACT.stat().st_size / 1048576:.0f} MB)")
         return
-    print("downloading the San Francisco extract…", flush=True)
+    print("downloading the Chicago extract...", flush=True)
     urllib.request.urlretrieve(EXTRACT_URL, EXTRACT)
     print(f"  {EXTRACT.stat().st_size / 1048576:.0f} MB", flush=True)
 
@@ -219,7 +220,7 @@ def main():
             geom += [la - lat0, lo - lon0]
     geom_ix.append(len(geom) // 2)
 
-    doc = {"quant": QUANT, "lat0": lat0, "lon0": lon0,
+    doc = {"city": "chicago", "quant": QUANT, "lat0": lat0, "lon0": lon0,
            "nodes": flat_nodes, "edges": flat_edges, "drive": drive_flags,
            "geomIx": geom_ix, "geom": geom}
     with open("walk_graph.json", "w") as f:
@@ -241,5 +242,16 @@ def main():
     print(f"  {mb:.2f} MB on disk")
 
 
+def is_current_graph():
+    graph = pathlib.Path("..") / "walk_graph.json.gz"
+    try:
+        with gzip.open(graph, "rt", encoding="utf-8") as source:
+            return json.load(source).get("city") == "chicago"
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        raise SystemExit(0 if is_current_graph() else 1)
     main()

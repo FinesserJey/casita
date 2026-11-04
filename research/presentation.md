@@ -2,6 +2,11 @@
 
 Filled-in version of the outline. Every number is pulled from the repo.
 
+> Historical note: this presentation and its cited measurements describe the
+> earlier San Francisco research build. The active application and refresh
+> pipeline now target downtown Chicago; do not present these figures or
+> unsupported SF-specific claims as current Chicago results.
+
 **Two changes to the running order.** Problem before architecture — the
 architecture slide lands much harder once they already want the thing. And a
 closing slide on what I *refused* to build, which was missing and is the

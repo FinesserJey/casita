@@ -1,9 +1,11 @@
 import shutil
 import importlib.util
 import re
+import sqlite3
 from urllib.request import urlopen
 
 import casita
+import pytest
 from casita import html, listing_page
 from casita.models import Listing
 
@@ -22,7 +24,9 @@ def test_demo_fixture_renders_offline(tmp_path, monkeypatch):
     monkeypatch.setenv("CASITA_ROUTES_OFFLINE", "1")
     monkeypatch.setenv("CASITA_SITE_URL", "http://127.0.0.1:8765")
 
-    result = casita._render_site("index.html", output_dir)
+    result = casita._render_site(
+        "index.html", output_dir, data_notice=casita.DEMO_DATA_NOTICE
+    )
 
     assert result["listings"] > 100
     assert result["details"] == result["listings"]
@@ -32,14 +36,19 @@ def test_demo_fixture_renders_offline(tmp_path, monkeypatch):
     listing_pages = list((output_dir / "listing").glob("*.html"))
     assert len(listing_pages) == result["details"]
     first_listing = listing_pages[0]
-    assert f"/og/listing/{first_listing.stem}.png" in first_listing.read_text()
+    assert f"/og/listing/{first_listing.stem}.png" in first_listing.read_text(encoding="utf-8")
     assert (output_dir / "og" / "listing" / f"{first_listing.stem}.png").read_bytes().startswith(PNG_HEADER)
-    assert "/og/index.png" in result["out_html"].read_text()
+    index_html = result["out_html"].read_text(encoding="utf-8")
+    assert "/og/index.png" in index_html
+    assert casita.DEMO_DATA_NOTICE in index_html
     assert (output_dir / "assets" / "favicon.svg").exists()
 
     local_refs = []
     for page in [result["out_html"], *listing_pages]:
-        for match in re.finditer(r"""(?:src|href)=["']([^"']+)["']""", page.read_text()):
+        for match in re.finditer(
+            r"""(?:src|href)=["']([^"']+)["']""",
+            page.read_text(encoding="utf-8"),
+        ):
             url = match.group(1)
             if url.startswith("/") and not url.startswith("//"):
                 local_refs.append((page, url))
@@ -72,6 +81,75 @@ def test_default_scrub_redacts_contact_info_without_matching_coordinates():
     text = listing_page._scrub(f"Call {phone} or leasing@example.com")
     assert text == "Call [redacted] or [redacted]"
     assert listing_page._scrub("37.956-122.3933") == "37.956-122.3933"
+
+
+def test_render_guard_rejects_non_chicago_listings():
+    listing = Listing(
+        source="manual",
+        source_id="1",
+        url="",
+        lat=37.77,
+        lng=-122.42,
+    )
+
+    with pytest.raises(RuntimeError, match="outside Chicago"):
+        casita._require_chicago_listings([listing])
+
+
+def test_public_hosting_database_omits_crm_data_without_changing_source(tmp_path):
+    source = tmp_path / "local.sqlite"
+    public = tmp_path / "public.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.executescript("""
+            CREATE TABLE listings (
+                key TEXT PRIMARY KEY,
+                contact_name TEXT,
+                contact_phone TEXT,
+                contact_email TEXT,
+                contact_note TEXT,
+                title TEXT
+            );
+            CREATE TABLE interactions (body TEXT);
+            CREATE TABLE listing_status (status_note TEXT);
+            CREATE TABLE attachments (filename TEXT);
+            CREATE TABLE votes (reason TEXT);
+            CREATE TABLE actions (payload_json TEXT);
+            CREATE TABLE pending_urls (url TEXT);
+            INSERT INTO listings VALUES (
+                'zillow:1', 'Private Name', '555-0100',
+                'private@example.com', 'Private note', 'Public title'
+            );
+            INSERT INTO interactions VALUES ('Private conversation');
+            INSERT INTO listing_status VALUES ('Private status note');
+            INSERT INTO attachments VALUES ('private-chat.png');
+            INSERT INTO votes VALUES ('Private vote reason');
+            INSERT INTO actions VALUES ('Private action payload');
+            INSERT INTO pending_urls VALUES ('Private pending URL');
+        """)
+
+    casita._make_public_hosting_database(source, public)
+
+    with sqlite3.connect(public) as conn:
+        assert conn.execute(
+            "SELECT contact_name, contact_phone, contact_email, contact_note, title "
+            "FROM listings"
+        ).fetchone() == (None, None, None, None, "Public title")
+        for table in (
+            "interactions", "listing_status", "attachments", "votes",
+            "actions", "pending_urls",
+        ):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+    with sqlite3.connect(source) as conn:
+        assert conn.execute(
+            "SELECT contact_name, contact_phone, contact_email, contact_note "
+            "FROM listings"
+        ).fetchone() == (
+            "Private Name", "555-0100", "private@example.com", "Private note"
+        )
+        assert conn.execute("SELECT body FROM interactions").fetchone()[0] == (
+            "Private conversation"
+        )
 
 
 def test_index_open_graph_urls_are_escaped(monkeypatch):

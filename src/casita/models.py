@@ -5,11 +5,7 @@ from pydantic import BaseModel, Field
 
 Source = Literal["zillow", "craigslist", "zumper", "redfin", "manual"]
 
-# Dog policy granularity, in order of preference for two large dogs:
-#   "large_ok"  — large dogs explicitly welcome (best)
-#   "dogs_ok"   — dogs allowed, no size given (needs a conversation)
-#   "small_only"— only small/under-N-lb dogs (excludes us, but visible to user)
-#   "no_dogs"   — no dogs (gate)
+# Pet-policy facts are retained for reference but do not affect ranking.
 DogPolicy = Literal["large_ok", "dogs_ok", "small_only", "no_dogs"]
 
 
@@ -27,7 +23,10 @@ class Listing(BaseModel):
     pets_allowed: bool | None = None
     dog_policy: DogPolicy | None = None
     parking: str | None = None
+    covered_parking: bool | None = None
     laundry: str | None = None
+    air_conditioning: bool | None = None
+    has_den: bool | None = None
     has_yard: bool | None = None  # LLM-detected: private outdoor space, backyard, patio, garden
     yard_note: str | None = None  # one-line description of the outdoor space if any
 

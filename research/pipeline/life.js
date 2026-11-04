@@ -235,26 +235,11 @@ function nightlifeCounts(a){
   return out;
 }
 
-/* ---------- amenities ----------
-   The thinnest column we have: unit_amen is on 25% of listings and wd on the
-   same 25%. Scoring only those would quietly rank a quarter of the city and
-   leave the rest at the prior, which reads as "no amenities" to anyone looking
-   at the list.
-
-   So when the listing doesn't say, fall back to the three facts that predict an
-   amenity building and are on ~95% of records: when it was built, how many
-   units it has, and whether a management company is behind it. A 2019 tower
-   with 240 units has a gym. Returns `known` so the UI can say which one it is
-   rather than passing off a guess as a fact. */
+/* Amenity claims are only scored when a source publishes them. */
 function amenityScore(a){
   if (a.unit_amen && a.unit_amen.length)
     return { v: cl(a.unit_amen.length / 7, 0, 1), known: true };
-  const parts = [];
-  if (a.yr)    parts.push(curve(a.yr,    [[1920,0.15],[1970,0.25],[2000,0.6],[2015,0.9],[2020,1]]));
-  if (a.units) parts.push(curve(a.units, [[4,0.1],[20,0.3],[60,0.65],[200,0.95]]));
-  if (((a.areview || {}).mgmt || {}).name) parts.push(0.8);
-  if (!parts.length) return { v: null, known: false };
-  return { v: cl(parts.reduce((s,x) => s+x, 0) / parts.length, 0, 1), known: false };
+  return { v: null, known: false };
 }
 
 /* ---------- safety ----------
@@ -271,44 +256,11 @@ function amenityScore(a){
 
    Multiplying instead means a bad block can cost a listing most of its match
    and no amount of nightlife buys it back. The floor is how far it can fall. */
-const SAFETY_FLOOR = { dealbreaker: 0.30, alot: 0.55, some: 0.80, fine: 1 };
 
-/* A percentile built on almost no reports is not a safety record, it's a blank
-   page. 5% of listings sit within 250m of fewer than ~90 total street reports --
-   low-density blocks where nobody calls 311 -- against a city median of 1,082,
-   and they swept the top of every safety-first ranking purely for having nothing
-   on file. Treasure Island came back as the safest place in San Francisco.
-
-   So percentiles get pulled toward the middle in proportion to how thin the
-   coverage behind them is: the same correction ratings and building records
-   already get here, for the same reason. */
-function streetCoverage(a){
-  const s = a.street || {};
-  return (s.violent||0) + (s.break_in||0) + (s.encampment||0) + (s.cleaning||0);
-}
 function streetPct(a, k){
-  const v = (a.street_pct || {})[k];
-  if (v == null) return null;
-  const trust = cl(streetCoverage(a) / 300, 0, 1);
-  return v * trust + 45 * (1 - trust);
+  return (a.street_pct || {})[k] ?? null;
 }
-function safetyRisk(a){
-  const v = streetPct(a, "violent"), b = streetPct(a, "break_in");
-  if (v == null && b == null) return null;
-  // A mugging and a smashed window are not the same event; violent counts double.
-  return cl(((v ?? b) * 2 + (b ?? v)) / 300, 0, 1);
-}
-function safetyGate(a){
-  const floor = SAFETY_FLOOR[LIFE.safety || "some"] ?? 0.8;
-  if (floor >= 1) return 1;
-  const risk = safetyRisk(a);
-  if (risk == null) return 1;
-  // Nothing below the middle of the city counts as unsafe — penalising a median
-  // block would just deflate every score equally and tell you nothing. Past that
-  // it bites, and accelerates.
-  const over = cl((risk - 0.55) / 0.45, 0, 1);
-  return cl(1 - (1 - floor) * Math.pow(over, 1.5), floor, 1);
-}
+const safetyGate = () => 1;
 
 /* ---------- hard constraints ---------- */
 // Returns the list of walls this listing runs into. Empty means eligible.
@@ -322,20 +274,11 @@ function breaches(a){
   if (h.minSqft && a.sqft && a.sqft < h.minSqft)
     out.push(`${n(a.sqft)} sq ft, under your ${n(h.minSqft)} minimum`);
   if (h.wd && a.wd === false) out.push("no in-unit washer/dryer");
-  // Musts are walls only where the data can say no out loud. unit_amen is
-  // published by a quarter of listings, so blocking on a missing amenity would
-  // punish the ads that bothered to itemise anything and quietly promote the
-  // ones that told us nothing. Rent control is on 95% of records, and only a
-  // flat "no" counts -- "maybe" is the city's own hedge, not a rejection.
-  if ((LIFE.musts || []).includes("rc") && a.rc === "no")
-    out.push("city records say this building is not rent-controlled");
-  if (LIFE.safety === "dealbreaker"){
-    // The last raw-percentile read on the safety path. It happened to agree with
-    // the corrected one today only because thin-coverage blocks all sit at raw 0.
-    const vi = streetPct(a, "violent");
-    if (vi >= 90)
-      out.push(`assaults and robberies nearby busier than ${Math.round(vi)}% of listings here`);
-  }
+  if ((LIFE.musts || []).includes("ac") && a.ac === false) out.push("no air conditioning");
+  if ((LIFE.musts || []).includes("covered_parking") && a.covered_parking === false)
+    out.push("no covered parking");
+  // Unknown listing facts stay visible for verification rather than becoming
+  // hard rejections.
   if (h.maxCommute){
     const w = (legs(a) || []).find(l => l.fixed);
     if (w && w.mins > h.maxCommute)
@@ -396,6 +339,7 @@ function dimCost(a){
 const AMEN_MATCH = [
   ["dishwasher", /dishwasher/i],
   ["ac",         /air condition/i],
+  ["covered_parking", /covered parking|garage|carport/i],
   ["outdoor",    /patio|balcony|deck/i],
 ];
 function dimApartment(a){
@@ -411,58 +355,22 @@ function dimApartment(a){
   // A named amenity is only scored where the listing actually itemised its
   // amenities. Silence is not evidence of absence, so a listing with no list
   // sits this term out rather than taking a hit for a blank field.
-  if (a.unit_amen)
-    for (const [k, re] of AMEN_MATCH)
-      if (wants(k)) push(a.unit_amen.some(x => re.test(x)) ? 1 : 0, 1.5);
-  if (wants("rc")) push(a.rc === "yes" ? 1 : a.rc === "maybe" ? 0.5 : 0, 2);
+  for (const [k, re] of AMEN_MATCH) {
+    if (!wants(k)) continue;
+    const fact = k === "ac" ? a.ac : k === "covered_parking" ? a.covered_parking : null;
+    if (fact != null) push(fact ? 1 : 0, 1.5);
+    else if (a.unit_amen)
+      push(a.unit_amen.some((x) => re.test(x)) ? 1 : 0, 1.5);
+  }
   if (a.yr) push(curve(a.yr, [[1900,0.5],[1950,0.6],[1990,0.8],[2015,1]]), 0.5);
   const num = parts.reduce((s,[v,w])=>s+v*w,0), den = parts.reduce((s,[,w])=>s+w,0);
   return den ? num/den : null;
 }
 function dimNeighborhood(a){
-  const parts = [], push = (v,w=1) => { if (Number.isFinite(v)) parts.push([cl(v,0,1),w]); };
-  const want = (LIFE.night ?? 2) / 4;
-  // Noise is the nuisance side of nightlife, and it is deliberately scored apart
-  // from wanting bars nearby (which lives in Lifestyle). You can be two blocks
-  // from the strip without living above it, and those are different apartments.
-  // night_pct is the share of 311 noise reports here landing 22:00-05:00.
-  push(1 - Math.abs(cl((a.night_pct || 0) / 55, 0, 1) - want), 2);
-  const snd = (a.scores||{}).sound;
-  if (snd != null) push(1 - Math.abs(snd/100 - want), 1);
-  // Street conditions stay at a fixed weight here. How much they matter to *you*
-  // is carried by safetyGate(), which multiplies the finished score -- counting
-  // the same answer in both places would let it swamp the other five dimensions.
-  const br = streetPct(a,"break_in"), vi = streetPct(a,"violent"),
-        en = streetPct(a,"encampment"), cle = streetPct(a,"cleaning");
-  if (br != null) push(1 - ((br + (vi ?? br)) / 2) / 100, 1.5);
-  if (en != null) push(1 - en/100, LIFE.streetMatters ? 1.5 : 0.5);
-  if (cle != null) push(1 - cle/100, 0.5);
-  const num = parts.reduce((s,[v,w])=>s+v*w,0), den = parts.reduce((s,[,w])=>s+w,0);
-  return den ? num/den : null;
+  return null;
 }
 function dimBuilding(a){
-  if (!a.parcel_ok) return null;
-  const parts = [];
-  // DBI inspects every building in SF, so a clean record is genuine evidence --
-  // but a clean record on a four-unit building says far less than a clean record
-  // on two hundred units, because there was far less to go wrong.
-  const units = Math.max(1, a.units || 1);
-  const depth = cl(Math.log2(units + 1) / 6, 0.15, 1);
-  let rec = 1 - cl((a.novs||0) / units / 1.5, 0, 1);
-  rec -= cl((a.active||0)/8, 0, 0.25);
-  rec -= cl((a.over_year||0)/6, 0, 0.25);
-  if (a.referred > 0) rec -= 0.15;
-  parts.push([cl(rec, 0, 1), 2 * depth]);
-
-  const sr = shrunkRating(a);
-  if (sr !== null) parts.push([cl((sr-2.5)/2, 0, 1), cl((a.rating_n||0)/12, 0.3, 2)]);
-
-  const num = parts.reduce((s,[v,w])=>s+v*w, 0), den = parts.reduce((s,[,w])=>s+w, 0);
-  // Nothing known is not the same as nothing wrong. Pull toward the middle in
-  // proportion to how thin the evidence is; 24% of listings were scoring a
-  // flawless building purely because no one had ever reviewed or cited them.
-  const PRIOR = 1.3;
-  return (num + 0.5*PRIOR) / (den + PRIOR);
+  return null;
 }
 
 // Confidence should describe the evidence, not how many formulas happened to
@@ -473,7 +381,6 @@ function evidence(a){
   if ((a.rating_n||0) >= 10) e += 2; else if (a.rating_n) e += 1;
   if (a.est === "verified") e += 1;
   if (a.sqft) e += 1;
-  if (a.parcel_ok) e += 1;
   if ((a.units||0) >= 15) e += 1;
   if (a.unit_amen && a.unit_amen.length) e += 1;
   return e;                                   // out of 7
@@ -484,7 +391,8 @@ function evidence(a){
    still separate two otherwise identical listings, they no longer outvote the
    answer you actually gave. */
 const NEAR_PICKED = [3, 2, 1.4];
-const NEAR_BASE = { grocery:0.9, transit:0.9, gym:0.4, cafe:0.4, park:0.4, nightlife:0 };
+const NEAR_BASE = { grocery:0.9, transit:0.9, gym:0.4, cafe:0.4, park:0.4,
+                    nightlife:0, dining:0.6, bakery:0.6, culture:0.6, shopping:0.5 };
 function nearWeight(kind){
   const picks = LIFE.near || [], i = picks.indexOf(kind);
   if (i >= 0) return NEAR_PICKED[i] ?? 1;
@@ -506,9 +414,7 @@ function proximityScore(a, kind){
    said no. Neither source can produce a confident refusal, so this pushes a
    listing down and says why; it is never allowed to hide one. */
 function petGate(a){
-  if (!(LIFE.musts || []).includes("pets")) return 1;
-  if (!a.pet) return 0.92;              // nobody published a policy either way
-  return a.pet.ok ? 1 : 0.75;           // the form asked, and got no answer
+  return 1;
 }
 
 /* Your first pick is a requirement, not a tiebreaker.
@@ -532,7 +438,7 @@ function wantGate(a){
 
 function dimLifestyle(a){
   const parts = [], push = (v,w=1) => { if (Number.isFinite(v) && w > 0) parts.push([cl(v,0,1),w]); };
-  for (const kind of ["grocery","gym","transit","cafe","park","nightlife"])
+  for (const kind of ["grocery","gym","transit","cafe","park","nightlife","dining","bakery","culture","shopping"])
     push(proximityScore(a, kind), nearWeight(kind));
   const walk = (a.scores||{}).walk;
   if (walk != null) push(walk/100, (LIFE.near||[]).length ? 0.5 : 1);
@@ -563,15 +469,8 @@ function quality(a){
   const parts = [], push = (v,w=1) => { if (Number.isFinite(v)) parts.push([cl(v,0,1),w]); };
   if (a.sqft) push(cl((a.sqft-280)/750, 0, 1), 1);
   if (a.unit_amen) push(cl(a.unit_amen.length/6, 0, 1), 1);
-  const b = dimBuilding(a); if (b != null) push(b, 2.5);
   const sr = shrunkRating(a); if (sr !== null) push(cl((sr-2.5)/2,0,1), 2);
   const snd = (a.scores||{}).sound; if (snd != null) push(1 - snd/100, 1);
-  // Coverage-corrected like every other consumer. This one matters most: quality
-  // is 25% of every fit score and the sort key behind "Best apartment", so the
-  // Treasure-Island effect -- a blank page reading as a spotless block -- was
-  // still live here after it had been fixed everywhere else.
-  const br = streetPct(a, "break_in"), vi = streetPct(a, "violent");
-  if (br != null) push(1 - ((br + (vi ?? br)) / 2) / 100, 1.5);
   const num = parts.reduce((s,[v,w])=>s+v*w,0), den = parts.reduce((s,[,w])=>s+w,0);
   if (!den) return { score: null, known: 0 };
   // Thin evidence must not produce a perfect building. Pull the score toward
@@ -674,9 +573,7 @@ function whyLow(f){
   const top = (LIFE.near || [])[0];
   const nearLbl = ((NEAR_OPTS.find(o => o[0] === top) || [,, ""])[2] || "").toLowerCase();
   const drags = [
-    [f.safeGate, "calm streets"],
     [f.wantGate, nearLbl ? `being near ${nearLbl}` : "what you asked to be near"],
-    [f.petGate,  "pet-friendly buildings"],
   ].filter(([g]) => g != null && g < 0.97).sort((a, b) => a[0] - b[0]);
   if (!drags.length) return null;
   return `Asking for ${drags[0][1]} is what holds these scores down — little in this ` +
@@ -739,22 +636,6 @@ function reasons(a, f){
             " within a 10-min walk" +
             (a.late ? `, ${a.late} licensed past 2am` : "")]);
   }
-  if ((LIFE.musts || []).includes("pets")){
-    const p = a.pet;
-    if (!p)
-      R.push(["y", "no pet policy published — worth asking before you view"]);
-    else if (p.ok){
-      // Pet rent is deliberately shown rather than folded into the cost score:
-      // charging a listing for publishing its fee would rank the buildings that
-      // stayed quiet about theirs above the ones that were straight with you.
-      const bits = [];
-      if (p.monthly) bits.push(`${money(p.monthly)}/mo pet rent`);
-      if (p.onetime) bits.push(`${money(p.onetime)} deposit`);
-      if (p.max) bits.push(`max ${p.max}`);
-      R.push(["g", bits.length ? `pets allowed — ${bits.join(", ")}` : "pets allowed"]);
-    } else
-      R.push(["r", `this ${(a.src && a.src[0] || {}).n || "listing"} post doesn't say pets are OK`]);
-  }
   if ((LIFE.musts || []).includes("amenities")){
     const am = amenityScore(a);
     if (am.v != null)
@@ -766,9 +647,6 @@ function reasons(a, f){
   }
   // Naming the drop matters more than the drop. A score that silently fell 40
   // points is the horoscope this file is meant not to be.
-  if (f.ungated != null && f.safeGate != null && f.safeGate < 0.98)
-    R.push(["r", `${Math.round(f.ungated * (1 - f.safeGate))} points off for the block — ` +
-                 `assaults and break-ins nearby busier than ${(a.street_pct||{}).violent}% of listings`]);
   if (f.ungated != null && f.wantGate != null && f.wantGate < 0.9){
     const top = (LIFE.near || [])[0];
     const label = ((NEAR_OPTS.find(o => o[0] === top) || [,,top])[2] || top).toLowerCase();
@@ -783,8 +661,6 @@ function reasons(a, f){
   if (a.rating && a.rating_n >= 10)
     R.push([a.rating >= 4 ? "g" : a.rating <= 3 ? "r" : "y",
             `${a.rating}/5 from ${a.rating_n} ${a.rating_src==="Google"?"Google":"renter"} reviews`]);
-  if (a.over_year > 5) R.push(["r", `${a.over_year} violations took over a year to fix`]);
-  if (a.rc === "yes") R.push(["g", "likely rent-controlled"]);
 
   const good = R.filter(x=>x[0]==="g").map(x=>x[1]);
   const bad  = R.filter(x=>x[0]==="r").map(x=>x[1]);
@@ -814,8 +690,8 @@ function reasons(a, f){
    free, and a reader who knows the pin is soft will read the ten-minute walk as
    the estimate it is. */
 function pinNote(a){
-  if (!a.parcel_ok)
-    return "This address could not be matched to a building on the city parcel map, so the pin — and every distance measured from it — is approximate.";
+  if (a.fuzzy || (a.loc || {}).level === "neighbourhood")
+    return "This source provides an approximate location, so travel times and nearby-report counts are estimates.";
   const clOnly = (a.src || []).length === 1 && a.src[0].n === "Craigslist";
   if (clOnly)
     return "Craigslist obscures exact addresses, so this pin is the neighbourhood the poster chose rather than the doorstep.";
@@ -842,17 +718,6 @@ function redFlags(a){
       out.push("the listing text describes a room or shared occupancy");
     if (a.beds == null) out.push("the listing never says how many bedrooms it has");
   }
-  const perUnit = (a.novs||0) / Math.max(1, a.units||1);
-  if (perUnit > 1.5)
-    out.push(`${n(a.novs)} building violations across ${n(a.units)} units`);
-  if ((a.over_year||0) > 3)
-    out.push(`${a.over_year} violations here took over a year to fix`);
-  if (a.referred > 0) out.push("the city escalated a case here to the City Attorney");
-  // Coverage-corrected, like everywhere else -- a block with nothing on file
-  // should not be disqualified, and should not be vouched for either.
-  const vi = streetPct(a, "violent"), br = streetPct(a, "break_in");
-  if (vi >= 85) out.push(`assaults and robberies busier than ${Math.round(vi)}% of listings`);
-  if (br >= 88) out.push(`car break-ins busier than ${Math.round(br)}% of listings`);
   if (a.rating != null && a.rating < 3 && (a.rating_n||0) >= 2)
     out.push(`rated ${a.rating}/5 by ${a.rating_n} reviewer${a.rating_n===1?"":"s"}`);
   return out;
@@ -972,16 +837,18 @@ function closeQuiz(){
    nothing asked here goes unread -- the previous version collected six answers
    and wired two of them up. */
 var NEAR_OPTS = [
-  ["nightlife","🎉","Bars & nightlife"], ["cafe","☕","Cafés"], ["gym","🏋️","Gyms"],
-  ["park","🌳","Parks"], ["grocery","🛒","Groceries"], ["transit","🚇","Transit"],
+  ["nightlife","🎉","Bars & nightlife"], ["dining","🍽️","Restaurants"],
+  ["bakery","☕","Bakeries"], ["culture","🎭","Arts & entertainment"],
+  ["shopping","🛍️","Shopping"], ["cafe","☕","Cafés"], ["gym","🏋️","Gyms"],
+  ["park","🌳","Parks"], ["grocery","🛒","Groceries"], ["transit","🚇","CTA access"],
 ];
 var NIGHT_OPTS = [["any","A bit of everything"],["bars","Bars & clubs"],
                   ["music","Live music"],["food","Restaurants & late food"]];
 var BED_OPTS = [[null,"Any"],[0,"Studio"],[1,"1+"],[2,"2+"],[3,"3+"]];
 var MUST_OPTS = [
-  ["pets","🐕","Pet-friendly"], ["wd","🧺","In-unit laundry"],
+  ["wd","🧺","In-unit laundry"], ["covered_parking","🚗","Covered parking"],
   ["amenities","🏊","Building amenities"], ["dishwasher","🍽️","Dishwasher"],
-  ["ac","❄️","A/C"], ["outdoor","🌿","Outdoor space"], ["rc","🔒","Rent-controlled"],
+  ["ac","❄️","A/C"], ["outdoor","🌿","Outdoor space"],
 ];
 var SAFETY_OPTS = [
   ["dealbreaker","Dealbreaker",

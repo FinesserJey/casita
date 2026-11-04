@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-scrape SF listings, re-enrich from the city database, rebuild the page.
+# Re-scrape downtown Chicago listings, refresh public report/place layers, rebuild the page.
 #
 # Anything absent last run shows as "New to you"; anything cheaper than when you
 # last looked shows as a price drop. Both are computed in your browser against
@@ -15,28 +15,19 @@ cd "$HERE/pipeline"
 if [[ ! -f ../../.env ]]; then
   echo "No .env found at repo root (needs APIFY_API_TOKEN=...)" >&2; exit 1
 fi
-if [[ ! -f city.sqlite ]]; then
-  echo "==> city database missing, building it (free, ~5 min)"
-  python3 build_city.py
-  python3 add_landlord.py
-  python3 landlord_check.py
-fi
-
 echo "==> 1/4  scraping listings"
 QUICK="${1:-}" python3 scrape_all.py
 
 echo "==> 2/4  merging + deduping across sources"
 python3 merge.py listings_raw.json
 
-echo "==> 3/4  enriching from the city database"
+echo "==> 3/4  enriching listings and Chicago public context"
 python3 export_app.py
 python3 add_trust.py
+python3 add_street.py
 python3 add_street_stats.py
-python3 fix_data.py            # multi-lot buildings, ratings that name their source
 python3 merge_apify_reviews.py # Apartments.com renter reviews (paid actor)
 python3 merge_units.py         # per-unit price, amenities, walk/sound scores, pet fees
-python3 craigslist_pets.py     # pets_dog / pets_cat filter sweep (free, ~2 min)
-python3 merge_pets.py          # attach those flags alongside the fee data
 python3 add_availability.py    # is it still rentable — reuses the sweep above
 # Zillow has no free liveness field, so its availability is rebuilt separately:
 # presence in today's search feed, then the unit table on building pages. These
@@ -45,7 +36,6 @@ python3 add_availability.py    # is it still rentable — reuses the sweep above
 # wiped the field and nothing put it back.
 python3 zillow_presence.py     # still in today's feed?  (free)
 python3 add_zillow_avail.py --plain   # unit tables on building pages (free)
-python3 locate.py              # recover addresses Craigslist hid, from the listing text
 python3 add_descriptions.py    # craigslist posting bodies (free)
 python3 add_zillow_apify.py    # zillow prose + floor area (~$3, the only paid description step)
 python3 add_qualities.py       # view, two levels, top floor, on-site manager, from the prose
@@ -54,6 +44,10 @@ python3 add_qualities.py       # view, two levels, top floor, on-site manager, f
 # $1.60 for the full set and five minutes, so it runs after the prose steps
 # rather than instead of them - they are free and they cover different ground.
 uv run --with pillow --with google-genai python add_photo_review.py
+python3 add_places.py          # CTA, bakeries, restaurants, culture, shopping and activities
+if ! python3 build_walk_graph.py --check; then
+  python3 build_walk_graph.py  # Chicago pedestrian/drive network, free OSM extract
+fi
 
 # One builder, not two. This step used to inline its own copy of the page
 # assembly, which predated build_pages.py and had drifted: it knew nothing about

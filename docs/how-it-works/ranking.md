@@ -18,8 +18,10 @@ asks Gemini to return every listing with:
 - a one-sentence reason
 - a severity: `ok`, `concerns`, or `filtered`
 
-The ranking policy keeps the personal assumptions: large dogs, SF walkability,
-Marin drive context, trail or beach access, and practical livability.
+The ranking policy reflects the current Chicago search: pets are neutral;
+layout, covered parking, in-unit laundry, A/C, CTA access, and walkable
+destinations matter. Unknown must-have details remain visible for verification
+rather than being treated as a confirmed match or an automatic failure.
 
 ## Ways This Could Go Further
 

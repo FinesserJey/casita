@@ -54,8 +54,8 @@ def _norm_addr(addr: str | None) -> str | None:
     s = addr.lower().strip()
     # Strip "near X" suffixes — Craigslist cross-street noise.
     s = re.sub(r"\s+near\s+.*$", "", s)
-    # Strip "San Francisco, CA …" suffix.
-    s = re.sub(r",?\s*san\s+francisco.*$", "", s)
+    # Strip the target city suffix.
+    s = re.sub(r",\s*chicago(?:,\s*il)?(?:\s+\d{5})?$", "", s)
     # Strip unit / apartment markers.
     s = _ADDR_NOISE.sub("", s)
     # Collapse punctuation and whitespace.

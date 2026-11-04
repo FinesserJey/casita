@@ -20,6 +20,11 @@ console = Console()
 PACKAGE_ROOT = Path(__file__).resolve().parent
 ROOT = PACKAGE_ROOT.parent.parent if PACKAGE_ROOT.parent.name == "src" else Path.cwd()
 DEMO_FIXTURE = PACKAGE_ROOT / "fixtures" / "demo.sqlite"
+DEMO_DATA_NOTICE = (
+    "Offline demo notice: this sanitized fixture contains listings from Casita's "
+    "earlier San Francisco search. Listing locations, neighborhood labels, and "
+    "average rents do not describe Chicago."
+)
 
 
 async def _enrich_one(sem, ctx, L: Listing, enrich_zillow: bool) -> None:
@@ -113,7 +118,7 @@ def _print_table(listings: list[Listing], limit: int = 25):
 
 @click.group()
 def cli():
-    """casita — SF rental search."""
+    """Casita — downtown Chicago rental search."""
 
 
 @cli.command()
@@ -122,7 +127,7 @@ def cli():
 @click.option(
     "--enrich-zillow/--no-enrich-zillow",
     default=True,
-    help="Visit Zillow detail pages to pull parking/laundry/pets. Cached locally.",
+    help="Visit Zillow detail pages to pull unit amenities. Cached locally.",
 )
 @click.option(
     "--refresh-cache",
@@ -284,8 +289,7 @@ def _get_field(conn: sqlite3.Connection, key: str, field: str):
 @cli.command()
 @click.option("--limit", default=50, help="Max listings to backfill in one run.")
 @click.option("--delay", default=3.0, help="Seconds to pause between page loads (anti-bot).")
-@click.option("--only-mill-valley", is_flag=True, help="Restrict to Mill Valley listings.")
-def backfill(limit: int, delay: float, only_mill_valley: bool):
+def backfill(limit: int, delay: float):
     """Open a HEADED browser and walk through Zillow listings whose detail
     pages we never cached. Each page is cached locally; LLM extraction
     re-runs over the cache on next `casita enrich`.
@@ -305,10 +309,10 @@ def backfill(limit: int, delay: float, only_mill_valley: bool):
                   AND (url LIKE 'https://www.zillow.com/homedetails/%'
                        OR url LIKE 'https://www.zillow.com/apartments/%'
                        OR url LIKE 'https://www.zillow.com/b/%')
-                  AND (parking IS NULL OR laundry IS NULL OR dog_policy IS NULL OR has_yard IS NULL)
+                  AND (parking IS NULL OR covered_parking IS NULL OR laundry IS NULL
+                       OR air_conditioning IS NULL OR has_den IS NULL OR dog_policy IS NULL
+                       OR has_yard IS NULL)
             """
-            if only_mill_valley:
-                q += " AND (neighborhood_resolved LIKE '%Mill%' OR address LIKE '%Mill Valley%' OR neighborhood LIKE 'mill-valley')"
             rows = conn.execute(q).fetchall()
 
         # Filter out the ones we already cached.
@@ -333,7 +337,7 @@ def backfill(limit: int, delay: float, only_mill_valley: bool):
                 user_agent=UA,
                 viewport={"width": 1280, "height": 900},
                 locale="en-US",
-                timezone_id="America/Los_Angeles",
+                timezone_id="America/Chicago",
             )
             await ctx.add_init_script(STEALTH_JS)
             page = ctx.pages[0] if ctx.pages else await ctx.new_page()
@@ -390,7 +394,7 @@ def solve():
         async with context(headless=False, persistent=True) as ctx:
             page = await ctx.new_page()
             await page.goto(
-                "https://www.zillow.com/inner-richmond-san-francisco-ca/rentals/",
+                "https://www.zillow.com/chicago-il/rentals/",
                 wait_until="domcontentloaded",
                 timeout=60000,
             )
@@ -780,7 +784,7 @@ def _og_listing_card_html(L: Listing, output_dir: Path, base_url: str) -> str:
     esc = html._esc
     photo = _og_photo_url(L, output_dir, base_url)
     addr = _scrub(L.address or L.title or "Listing") or "Listing"
-    hood = (L.hood or "San Francisco").replace("-", " ").title()
+    hood = (L.hood or "Downtown Chicago").replace("-", " ").title()
     price = f"${L.price:,}/mo" if L.price else "Price on request"
     specs = []
     if beds := _fmt_og_number(L.beds):
@@ -847,7 +851,7 @@ def _og_index_card_html(listings: list[Listing], run, output_dir: Path, base_url
             from datetime import datetime as _dt, timezone as _timezone
 
             dt = _dt.fromisoformat(str(ts_raw)).replace(tzinfo=_timezone.utc)
-            refreshed = dt.astimezone(html.PACIFIC).strftime("Refreshed %b %-d, %-I:%M %p")
+            refreshed = dt.astimezone(html.CENTRAL).strftime("Refreshed %b %-d, %-I:%M %p")
         except Exception:
             refreshed = str(ts_raw)
     photo_html = (
@@ -869,7 +873,7 @@ def _og_index_card_html(listings: list[Listing], run, output_dir: Path, base_url
   <section class="copy">
     <div class="price">{len(listings)} places</div>
     <h1>Rental search demo</h1>
-    <p>{strong} strong fits · large dogs · trails · beaches · bakeries</p>
+    <p>{strong} strong fits · CTA access · covered parking · in-unit laundry · A/C</p>
     <div class="chips"><span>{esc(refreshed or "Static demo")}</span></div>
   </section>
 </main>
@@ -1048,7 +1052,13 @@ def _generate_og_images(output_dir: Path, listings: list[Listing], run=None) -> 
     return count
 
 
-def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
+def _render_site(
+    filename: str,
+    output_dir: Path,
+    *,
+    data_notice: str | None = None,
+    copy_screenshots: bool = True,
+) -> dict[str, int | Path]:
     with storage.connect() as conn:
         # Cross-source dedup across the whole active set BEFORE we render —
         # catches duplicates that landed in separate scrape runs.
@@ -1059,9 +1069,11 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
         status_map = {r[0]: r[1] for r in status_rows}
         listings = rank(storage.active_listings(conn), status_map=status_map,
                         vote_scores=_vote_scores(conn))
+        if data_notice is None:
+            _require_chicago_listings(listings)
         run = storage.latest_run(conn)
         walk_map = walk.populate_for(listings)
-        drive_map = walk.populate_drive_for_marin(listings)
+        drive_map = walk.populate_drive_for_chicago(listings)
         drive_bakery_map = walk.populate_drive_for_bakeries(listings)
         convo_map = {
             L.key: storage.conversation_state(conn, L.key)
@@ -1078,7 +1090,7 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
 <head><meta charset="utf-8"><title>Casita</title></head>
 <body><p>No listings in DB. Run <code>casita search</code> first.</p></body>
 </html>
-""")
+""", encoding="utf-8")
         return {
             "out_html": out_html,
             "listings": 0,
@@ -1091,7 +1103,10 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
     _drop_missing_local_media(listings, output_dir)
     out_html = output_dir / filename
     out_html.parent.mkdir(exist_ok=True)
-    out_html.write_text(html.render(listings, run=run, convo_map=convo_map))
+    out_html.write_text(
+        html.render(listings, run=run, convo_map=convo_map, data_notice=data_notice),
+        encoding="utf-8",
+    )
 
     # Per-listing detail pages — one file per active listing under tmp/listing/.
     from . import listing_page
@@ -1105,7 +1120,7 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
                 L, conn, walk_map=walk_map, drive_map=drive_map,
                 drive_bakery_map=drive_bakery_map,
             )
-            (listing_dir / f"{slug}.html").write_text(page_html)
+            (listing_dir / f"{slug}.html").write_text(page_html, encoding="utf-8")
             detail_count += 1
 
     _copy_static_assets(output_dir)
@@ -1113,7 +1128,7 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
     # Mirror screenshots into the served tree at tmp/shots/.
     import shutil
     src_shots = ROOT / "screenshots"
-    if src_shots.exists():
+    if copy_screenshots and src_shots.exists():
         dst_shots = output_dir / "shots"
         dst_shots.mkdir(exist_ok=True)
         for f in src_shots.iterdir():
@@ -1138,18 +1153,91 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
     }
 
 
+def _require_chicago_listings(listings: list[Listing]) -> None:
+    for listing in listings:
+        if listing.lat is None or listing.lng is None:
+            continue
+        if not (41.64 <= listing.lat <= 42.03 and -87.95 <= listing.lng <= -87.52):
+            raise RuntimeError(
+                "The active database contains listings outside Chicago. "
+                "Run `casita search` before rendering or publishing."
+            )
+
+
+def _make_public_hosting_database(source: Path, destination: Path) -> None:
+    """Copy the local DB and remove private CRM data before public rendering."""
+    with sqlite3.connect(source) as source_conn, sqlite3.connect(destination) as public_conn:
+        source_conn.backup(public_conn)
+        tables = {
+            row[0]
+            for row in public_conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        listing_columns = {
+            row[1] for row in public_conn.execute("PRAGMA table_info(listings)")
+        }
+        contact_columns = [
+            column for column in (
+                "contact_name", "contact_phone", "contact_email", "contact_note",
+            )
+            if column in listing_columns
+        ]
+        if contact_columns:
+            assignments = ", ".join(f"{column}=NULL" for column in contact_columns)
+            public_conn.execute(f"UPDATE listings SET {assignments}")
+        for table in (
+            "interactions", "listing_status", "attachments", "votes",
+            "actions", "pending_urls",
+        ):
+            if table in tables:
+                public_conn.execute(f"DELETE FROM {table}")
+        public_conn.commit()
+
+
 def _publish_impl(project: str | None, filename: str):
     project = project or os.environ.get("CASITA_FIREBASE_PROJECT")
     if not project:
         console.print("[red]set CASITA_FIREBASE_PROJECT or pass --project[/red]")
         raise SystemExit(1)
 
-    _render_site(filename, ROOT / "tmp")
+    import shutil
+    import tempfile
 
-    result = subprocess.run(
-        ["firebase", "deploy", "--only", "hosting", f"--project={project}"],
-        cwd=ROOT, capture_output=True, text=True,
+    hosting_dir = ROOT / "tmp" / "firebase-hosting"
+    if hosting_dir.exists():
+        shutil.rmtree(hosting_dir)
+    hosting_dir.mkdir(parents=True)
+
+    previous_db_path = os.environ.get("CASITA_DB_PATH")
+    try:
+        with tempfile.TemporaryDirectory(prefix="casita-public-") as temp_dir:
+            public_db = Path(temp_dir) / "casita.db"
+            _make_public_hosting_database(storage.db_path(), public_db)
+            os.environ["CASITA_DB_PATH"] = str(public_db)
+            _render_site(filename, hosting_dir, copy_screenshots=False)
+    finally:
+        if previous_db_path is None:
+            os.environ.pop("CASITA_DB_PATH", None)
+        else:
+            os.environ["CASITA_DB_PATH"] = previous_db_path
+
+    deploy_args = ["deploy", "--only", "hosting", f"--project={project}"]
+    firebase_cli = shutil.which("firebase.cmd" if os.name == "nt" else "firebase")
+    if not firebase_cli:
+        console.print("[red]Firebase CLI executable was not found on PATH[/red]")
+        raise SystemExit(1)
+    command = (
+        [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            subprocess.list2cmdline([firebase_cli, *deploy_args]),
+        ]
+        if os.name == "nt"
+        else [firebase_cli, *deploy_args]
     )
+    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
     if result.returncode != 0:
         console.print(f"[red]firebase deploy failed:[/red]\n{result.stderr or result.stdout}")
         raise SystemExit(1)
@@ -1189,7 +1277,11 @@ def demo(fixture: Path, host: str, port: int):
     previous = {k: os.environ.get(k) for k in env_updates}
     try:
         os.environ.update(env_updates)
-        _render_site("index.html", output_dir)
+        _render_site(
+            "index.html",
+            output_dir,
+            data_notice=DEMO_DATA_NOTICE,
+        )
     finally:
         for key, value in previous.items():
             if value is None:
